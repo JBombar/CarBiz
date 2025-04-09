@@ -4,6 +4,37 @@ import { cookies } from 'next/headers';
 import { Database } from '@/types/supabase';
 import { z } from 'zod';
 
+// Define interfaces that match your actual database schema
+interface Lead {
+  id: string;
+  from_user_id: string;
+  listing_id: string | null;
+  full_name: string | null;
+  email: string | null;
+  phone: string | null;
+  message: string | null;
+  status: string | null;
+  budget: number | null;
+  color: string | null;
+  condition: string | null;
+  fuel_type: string | null;
+  mileage: number | null;
+  year: number | null;
+  make: string | null;
+  model: string | null;
+  contacted: boolean | null;
+  created_at: string | null;
+  updated_at: string | null;
+  source_type: string | null;
+  source_id: string | null;
+  // Add any other fields that exist in your leads table
+  listing?: {
+    id: string;
+    dealer_id: string;
+    // Add other listing fields you need
+  } | null;
+}
+
 // Helper
 function createSupabaseClient() {
   const cookieStore = cookies();
@@ -14,10 +45,10 @@ function createSupabaseClient() {
       cookies: {
         get(name: string) { return cookieStore.get(name)?.value },
         set(name: string, value: string, options: CookieOptions) {
-          try { cookieStore.set({ name, value, ...options }); } catch {}
+          try { cookieStore.set({ name, value, ...options }); } catch { }
         },
         remove(name: string, options: CookieOptions) {
-          try { cookieStore.set({ name, value: '', ...options }); } catch {}
+          try { cookieStore.set({ name, value: '', ...options }); } catch { }
         },
       },
     }
@@ -61,15 +92,18 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  // fetch lead
-  const { data: lead, error } = await supabase
+  // Fetch lead with properly typed response
+  const { data, error } = await supabase
     .from('leads')
-    .select('*, listing:car_listings(dealer_id)')
+    .select('*, listing:listing_id(id, dealer_id)')
     .eq('id', id)
     .single();
 
+  // Type assertion to tell TypeScript this matches our Lead interface
+  const lead = data as Lead | null;
+
   if (error || !lead) {
-    return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
+    return NextResponse.json({ error: 'Lead not found', details: error?.message }, { status: 404 });
   }
 
   // check user role
@@ -86,7 +120,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   // admin => see any
   if (currentUser.role === 'admin') {
     return NextResponse.json(lead, { status: 200 });
-  } 
+  }
   // dealer => see leads for listings they own
   if (currentUser.role === 'dealer') {
     if (lead.listing?.dealer_id === user.id) {
@@ -128,15 +162,17 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   }
   const validated = parseBody.data;
 
-  // fetch existing lead 
-  const { data: existing, error: fetchError } = await supabase
+  // fetch existing lead with type assertion 
+  const { data, error: fetchError } = await supabase
     .from('leads')
-    .select('*, listing:car_listings(dealer_id)')
+    .select('*, listing:listing_id(id, dealer_id)')
     .eq('id', id)
     .single();
 
+  const existing = data as Lead | null;
+
   if (fetchError || !existing) {
-    return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
+    return NextResponse.json({ error: 'Lead not found', details: fetchError?.message }, { status: 404 });
   }
 
   // check user role
@@ -173,7 +209,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   // update
   const { data: updated, error: updateError } = await supabase
     .from('leads')
-    .update({ 
+    .update({
       ...validated,
       updated_at: new Date().toISOString()
     })
@@ -237,7 +273,7 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
       allowed = true;
     }
   } else {
-    // normal user => can delete if from_user_id = user.id, if that’s your logic
+    // normal user => can delete if from_user_id = user.id, if that's your logic
     if (existing.from_user_id === user.id) {
       allowed = true;
     }
