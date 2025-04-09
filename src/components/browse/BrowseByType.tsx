@@ -1,7 +1,7 @@
 import Link from 'next/link';
-import { 
-  HiOutlineTruck, 
-  HiOutlineLightningBolt 
+import {
+  HiOutlineTruck,
+  HiOutlineLightningBolt
 } from 'react-icons/hi';
 import {
   LuCar,
@@ -28,15 +28,16 @@ const VehicleTypeCard = ({ icon, label, href }: VehicleTypeProps) => (
 
 export function BrowseByType() {
   const vehicleTypes = [
-    { icon: <TbCarSuv size={32} />, label: 'SUV', href: '/search?type=suv' },
-    { icon: <LuCar size={32} />, label: 'Sedan', href: '/search?type=sedan' },
-    { icon: <PiCarSimpleBold size={32} />, label: 'Hatchback', href: '/search?type=hatchback' },
-    { icon: <HiOutlineLightningBolt size={32} />, label: 'Electric', href: '/search?type=electric' },
-    { icon: <PiCarProfileBold size={32} />, label: 'Convertible', href: '/search?type=convertible' },
-    { icon: <LuCarTaxiFront size={32} />, label: 'Hybrid', href: '/search?type=hybrid' },
-    { icon: <LuCarFront size={32} />, label: 'Coupe', href: '/search?type=coupe' },
-    { icon: <PiVanBold size={32} />, label: 'Van', href: '/search?type=van' },
+    { icon: <TbCarSuv size={32} />, label: 'SUV', href: '/inventory?body_type=suv' },
+    { icon: <LuCar size={32} />, label: 'Sedan', href: '/inventory?body_type=sedan' },
+    { icon: <PiCarSimpleBold size={32} />, label: 'Hatchback', href: '/inventory?body_type=hatchback' },
+    { icon: <HiOutlineLightningBolt size={32} />, label: 'Electric', href: '/inventory?fuel_type=electric' },
+    { icon: <PiCarProfileBold size={32} />, label: 'Convertible', href: '/inventory?body_type=convertible' },
+    { icon: <LuCarTaxiFront size={32} />, label: 'Hybrid', href: '/inventory?fuel_type=hybrid' },
+    { icon: <LuCarFront size={32} />, label: 'Coupe', href: '/inventory?body_type=coupe' },
+    { icon: <PiVanBold size={32} />, label: 'Van', href: '/inventory?body_type=van' },
   ];
+
 
   return (
     <section className="py-16 bg-gray-50">
@@ -44,11 +45,11 @@ export function BrowseByType() {
         <h2 className="text-3xl font-bold text-center mb-12">Browse By Type</h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-4">
           {vehicleTypes.map((type, index) => (
-            <VehicleTypeCard 
-              key={index} 
-              icon={type.icon} 
-              label={type.label} 
-              href={type.href} 
+            <VehicleTypeCard
+              key={index}
+              icon={type.icon}
+              label={type.label}
+              href={type.href}
             />
           ))}
         </div>

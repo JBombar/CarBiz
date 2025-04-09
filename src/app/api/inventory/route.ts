@@ -1,8 +1,9 @@
+// app/api/inventory/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { z } from 'zod';
-import { Database } from '@/types/supabase';
+import { Database } from '@/types/supabase'; // Ensure this path is correct
 
 // Define a comprehensive Zod schema matching the actual database columns
 const inventoryQuerySchema = z.object({
@@ -11,7 +12,7 @@ const inventoryQuerySchema = z.object({
   model: z.string().optional(),
   fuel_type: z.string().optional(),
   transmission: z.string().optional(),
-  body_type: z.string().optional(),
+  body_type: z.string().optional(), // Included here
   exterior_color: z.string().optional(),
   interior_color: z.string().optional(),
   engine: z.string().optional(),
@@ -38,19 +39,17 @@ const inventoryQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(24),
   sortBy: z.enum([
     'price', 'year', 'mileage', 'created_at',
-    'make', 'model', 'condition', 'status'
+    'make', 'model', 'condition', 'status' // Add any other valid sort columns
   ]).default('created_at'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
-}).passthrough(); // Allow other params to pass through to prevent validation errors
+}).passthrough(); // Allow other params to pass through
 
 // Define type for validated query parameters
 type InventoryQueryParams = z.infer<typeof inventoryQuerySchema>;
 
-// Valid enum values for reference
+// Valid enum values for reference (optional, but good practice)
 const VALID_CONDITIONS = ['new', 'used'];
-const VALID_STATUSES = ['available', 'reserved', 'sold', 'rented'];
-const VALID_LISTING_TYPES = ['sale', 'rent', 'both', 'rental'];
-const VALID_RENTAL_STATUSES = ['available', 'rented', 'maintenance'];
+// Add others if needed: const VALID_STATUSES = ...
 
 // Helper function to create Supabase client
 function createSupabaseClient() {
@@ -66,12 +65,12 @@ function createSupabaseClient() {
         set(name: string, value: string, options: CookieOptions) {
           try {
             cookieStore.set({ name, value, ...options });
-          } catch (e) { /* Ignore cookie errors */ }
+          } catch (e) { /* Ignore cookie errors in server components */ }
         },
         remove(name: string, options: CookieOptions) {
           try {
             cookieStore.set({ name, value: '', ...options });
-          } catch (e) { /* Ignore cookie errors */ }
+          } catch (e) { /* Ignore cookie errors in server components */ }
         },
       },
     }
@@ -83,15 +82,16 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const params = Object.fromEntries(searchParams.entries());
 
-    // Validate query parameters with the schema
+    // Validate query parameters
     const result = inventoryQuerySchema.safeParse(params);
     if (!result.success) {
+      console.warn("Invalid query parameters:", result.error.format());
       return NextResponse.json(
         {
           data: [],
           count: 0,
           page: 1,
-          limit: 24,
+          limit: 24, // Use a default or parse safely
           error: "Invalid query parameters",
           details: result.error.format()
         },
@@ -100,92 +100,151 @@ export async function GET(request: NextRequest) {
     }
 
     const validatedParams = result.data;
+    console.log("Validated Query Params:", validatedParams); // Log validated params
 
     // Initialize Supabase query
     const supabase = createSupabaseClient();
+    // Ensure your table name 'car_listings' is correct
     let query = supabase.from('car_listings').select('*', { count: 'exact' });
 
-    // Apply filters - Add wildcards for substring matching on make
-    if (validatedParams.make && validatedParams.make !== 'Any') {
-      // Modified: Using wildcards to match substrings instead of exact match
-      query = query.ilike('make', `%${validatedParams.make.trim()}%`);
+    // --- Apply Filters Dynamically ---
 
-      // Log for debugging
-      console.log(`Filtering by make with substring match: "%${validatedParams.make.trim()}%"`);
+    // Make Filter
+    if (validatedParams.make && validatedParams.make !== 'Any') {
+      query = query.ilike('make', `%${validatedParams.make.trim()}%`);
+      console.log(`API: Filtering by make: "%${validatedParams.make.trim()}%"`);
     }
 
-    // Improved model filter with wildcards
+    // Model Filter
     if (validatedParams.model &&
       validatedParams.model !== 'Any' &&
       validatedParams.model.toLowerCase() !== 'any') {
-      // Modified: Using wildcards for substring matching on model too
       query = query.ilike('model', `%${validatedParams.model.trim()}%`);
-
-      // Log for debugging
-      console.log(`Filtering by model with substring match: "%${validatedParams.model.trim()}%"`);
+      console.log(`API: Filtering by model: "%${validatedParams.model.trim()}%"`);
     }
 
-    // Rest of your filters...
+    // Year Range Filters
     if (validatedParams.year_from) {
       query = query.gte('year', validatedParams.year_from);
+      console.log(`API: Filtering by year_from: >= ${validatedParams.year_from}`);
     }
-
     if (validatedParams.year_to) {
       query = query.lte('year', validatedParams.year_to);
+      console.log(`API: Filtering by year_to: <= ${validatedParams.year_to}`);
     }
 
-    // Continue with other filters...
-    // ...
+    // ****** BODY TYPE FILTER (Added) ******
+    if (validatedParams.body_type &&
+      validatedParams.body_type !== 'Any' &&
+      validatedParams.body_type.toLowerCase() !== 'any') {
+      // Use .ilike() for case-insensitive matching (e.g., 'suv' matches 'SUV')
+      // Use .eq() for exact case-sensitive matching if needed
+      query = query.ilike('body_type', validatedParams.body_type.trim());
+      console.log(`API: Filtering by body_type: "${validatedParams.body_type.trim()}"`);
+    }
+    // **************************************
 
-    // Execute query and get results
-    const { data: cars, error, count } = await query
-      .order(validatedParams.sortBy, { ascending: validatedParams.sortOrder === 'asc' })
-      .range(
-        (validatedParams.page - 1) * validatedParams.limit,
-        validatedParams.page * validatedParams.limit - 1
-      );
-
-    // Improved warning log with more detailed information
-    if (!cars || cars.length === 0) {
-      // General message when no cars found with any filters
-      if (Object.keys(validatedParams).length > 2) { // More than just page & limit params
-        console.warn(`No cars found matching filters: ${JSON.stringify(validatedParams)}`);
-        console.log(`Database hint: Make sure the database values match filter format. Using substring matching, but still no results.`);
-      }
+    // Fuel Type Filter
+    if (validatedParams.fuel_type &&
+      validatedParams.fuel_type !== 'Any' &&
+      validatedParams.fuel_type.toLowerCase() !== 'any') {
+      query = query.ilike('fuel_type', validatedParams.fuel_type.trim());
+      console.log(`API: Filtering by fuel_type: "${validatedParams.fuel_type.trim()}"`);
     }
 
+    // Condition Filter
+    if (validatedParams.condition &&
+      validatedParams.condition !== 'Any' &&
+      VALID_CONDITIONS.includes(validatedParams.condition)) { // Use .includes for enums
+      query = query.eq('condition', validatedParams.condition);
+      console.log(`API: Filtering by condition: "${validatedParams.condition}"`);
+    }
+
+    // Transmission Filter
+    if (validatedParams.transmission &&
+      validatedParams.transmission !== 'Any' &&
+      validatedParams.transmission.toLowerCase() !== 'any') {
+      query = query.ilike('transmission', validatedParams.transmission.trim());
+      console.log(`API: Filtering by transmission: "${validatedParams.transmission.trim()}"`);
+    }
+
+    // Price Range Filters
+    if (validatedParams.price_min !== undefined && validatedParams.price_min >= 0) {
+      query = query.gte('price', validatedParams.price_min);
+      console.log(`API: Filtering by price_min: >= ${validatedParams.price_min}`);
+    }
+    if (validatedParams.price_max !== undefined && validatedParams.price_max > 0) { // Check > 0
+      query = query.lte('price', validatedParams.price_max);
+      console.log(`API: Filtering by price_max: <= ${validatedParams.price_max}`);
+    }
+
+    // Mileage Range Filters
+    if (validatedParams.mileage_min !== undefined && validatedParams.mileage_min >= 0) {
+      query = query.gte('mileage', validatedParams.mileage_min);
+      console.log(`API: Filtering by mileage_min: >= ${validatedParams.mileage_min}`);
+    }
+    if (validatedParams.mileage_max !== undefined && validatedParams.mileage_max >= 0) {
+      // If max mileage is 0, this finds cars with exactly 0 mileage.
+      // Adjust logic if 0 should mean something else (e.g., "up to 0")
+      query = query.lte('mileage', validatedParams.mileage_max);
+      console.log(`API: Filtering by mileage_max: <= ${validatedParams.mileage_max}`);
+    }
+
+    // --- Apply Sorting ---
+    // Ensure sortBy column exists in your database table
+    const validSortBy = ['price', 'year', 'mileage', 'created_at', 'make', 'model', 'condition', 'status'].includes(validatedParams.sortBy)
+      ? validatedParams.sortBy
+      : 'created_at'; // Fallback to default if invalid sortBy provided
+
+    query = query.order(validSortBy, { ascending: validatedParams.sortOrder === 'asc' });
+
+    // --- Apply Pagination ---
+    const startIndex = (validatedParams.page - 1) * validatedParams.limit;
+    const endIndex = startIndex + validatedParams.limit - 1;
+    query = query.range(startIndex, endIndex);
+
+    // --- Execute Query ---
+    console.log("Executing Supabase Query..."); // Log before execution
+    const { data: cars, error, count } = await query;
+
+    // --- Handle Results ---
     if (error) {
-      console.error('Error fetching inventory:', error);
+      console.error('Supabase query error:', error);
       return NextResponse.json(
         {
           data: [],
           count: 0,
           page: validatedParams.page,
           limit: validatedParams.limit,
-          error: "Failed to fetch inventory"
+          error: `Failed to fetch inventory: ${error.message}` // Include Supabase error message
         },
         { status: 500 }
       );
     }
 
+    console.log(`Query successful. Found ${cars?.length || 0} cars. Total count matching filters: ${count}`);
+
+    // Return structured response matching frontend expectations
     return NextResponse.json({
-      data: cars || [],
-      count: count || 0,
+      data: cars || [], // Ensure data is always an array
+      count: count || 0, // Ensure count is always a number
       page: validatedParams.page,
       limit: validatedParams.limit
     });
 
-  } catch (error) {
-    console.error('Unexpected error in inventory API:', error);
+  } catch (error: any) {
+    // Catch unexpected errors during setup or validation
+    console.error('Unexpected error in GET /api/inventory:', error);
     return NextResponse.json(
       {
         data: [],
         count: 0,
-        page: 1,
+        page: 1, // Sensible defaults on unexpected error
         limit: 24,
-        error: "Internal server error"
+        error: "Internal server error",
+        details: error.message // Include error message if available
       },
       { status: 500 }
     );
   }
-} 
+}

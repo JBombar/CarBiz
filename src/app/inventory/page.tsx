@@ -1,8 +1,10 @@
+// app/inventory/page.tsx
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback, Suspense } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useSearchParams, useRouter } from "next/navigation";
 import {
   Card,
   CardContent,
@@ -52,15 +54,28 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { v4 as uuidv4 } from 'uuid';
-import { formatPrice, formatMileage } from '@/utils/format';
+// REMOVED INCORRECT IMPORT: import { formatPrice, formatMileage } from '@/utils/format';
 import { toast } from "@/components/ui/use-toast";
 
-// Generate dummy images for each car (simulating a carousel)
-const generateDummyImages = (id: number) => [
-  `/images/car-${id}.jpg`,
-  `/images/car-${id % 9 + 1}.jpg`,
-  `/images/car-${(id + 1) % 9 + 1}.jpg`,
-];
+// **** ADD THIS EXPORT ****
+export const dynamic = 'force-dynamic';
+
+// **** ADD THESE HELPER FUNCTIONS ****
+const formatPrice = (price: number | null | undefined): string => {
+  if (price == null) return "N/A"; // Handle null or undefined
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0 // No cents needed for car prices typically
+  }).format(price);
+};
+
+const formatMileage = (mileage: number | null | undefined): string => {
+  if (mileage == null) return "N/A"; // Handle null or undefined
+  // Format with commas and add " mi" suffix
+  return `${new Intl.NumberFormat('en-US').format(mileage)} mi`;
+};
+// ************************************
 
 // Type for car listing from database
 interface CarListing {
@@ -77,30 +92,17 @@ interface CarListing {
   location_country: string | null;
   images: string[] | null;
   description: string | null;
-  // Add other fields as needed for your UI
+  body_type?: string | null;
 }
 
-// Add this interface to define the component props properly
+// Define the component props properly
 interface AdvancedCarFiltersProps {
-  filters: {
-    make: string;
-    model: string;
-    yearMin: number;
-    yearMax: number;
-    priceMin: number;
-    priceMax: number;
-    mileageMin: number;
-    mileageMax: number;
-    fuelType: string;
-    transmission: string;
-    condition: string;
-    bodyType: string;
-  };
-  setFilters: React.Dispatch<React.SetStateAction<any>>;
+  filters: FilterState;
+  setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
   onClose: () => void;
 }
 
-// Add new interfaces for makes and models
+// Interfaces for makes and models
 interface CarMake {
   id: string;
   name: string;
@@ -112,962 +114,677 @@ interface CarModel {
   name: string;
 }
 
-export default function InventoryPage() {
+// Define a type for the filter state
+interface FilterState {
+  make: string;
+  model: string;
+  yearMin: number;
+  yearMax: number;
+  priceMin: number;
+  priceMax: number;
+  mileageMin: number;
+  mileageMax: number;
+  fuelType: string;
+  transmission: string;
+  condition: string;
+  bodyType: string;
+}
+
+// Default filter values constant
+const defaultFilters: FilterState = {
+  make: "Any",
+  model: "",
+  yearMin: 2010,
+  yearMax: new Date().getFullYear(),
+  priceMin: 0,
+  priceMax: 150000,
+  mileageMin: 0,
+  mileageMax: 100000,
+  fuelType: "Any",
+  transmission: "Any",
+  condition: "Any",
+  bodyType: "Any"
+};
+
+// Helper function to parse sort option
+const parseSortOption = (option: string): [string, string] => {
+  if (!option || !option.includes('-')) return ['created_at', 'desc'];
+  const [field, direction] = option.split('-');
+  return [field, direction];
+};
+
+// Wrap the main component in Suspense for useSearchParams
+export default function InventoryPageWrapper() {
+  return (
+    <Suspense fallback={<InventoryLoadingSkeleton />}>
+      <InventoryPage />
+    </Suspense>
+  );
+}
+
+// Loading Skeleton Component
+function InventoryLoadingSkeleton() {
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+    </div>
+  );
+}
+
+function InventoryPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
   const [cars, setCars] = useState<CarListing[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Filter state - moved up before any useEffects that use it
-  const [filters, setFilters] = useState({
-    make: "Any",
-    model: "",
-    yearMin: 2010,
-    yearMax: 2024,
-    priceMin: 0,
-    priceMax: 150000,
-    mileageMin: 0,
-    mileageMax: 100000,
-    fuelType: "Any",
-    transmission: "Any",
-    condition: "Any",
-    bodyType: "Any"
+  const [filters, setFilters] = useState<FilterState>(() => {
+    const initialFilters = { ...defaultFilters };
+    const bodyTypeParam = searchParams.get('body_type') || searchParams.get('type');
+    if (bodyTypeParam) initialFilters.bodyType = bodyTypeParam;
+    const fuelTypeParam = searchParams.get('fuel_type');
+    if (fuelTypeParam) initialFilters.fuelType = fuelTypeParam;
+    const makeParam = searchParams.get('make');
+    if (makeParam) initialFilters.make = makeParam;
+    const modelParam = searchParams.get('model');
+    if (modelParam) initialFilters.model = modelParam;
+    const conditionParam = searchParams.get('condition');
+    if (conditionParam) initialFilters.condition = conditionParam;
+    const transmissionParam = searchParams.get('transmission');
+    if (transmissionParam) initialFilters.transmission = transmissionParam;
+    // Add parsing for price, year, mileage ranges from URL if needed
+    const priceMinParam = searchParams.get('price_min');
+    if (priceMinParam) initialFilters.priceMin = parseInt(priceMinParam, 10) || defaultFilters.priceMin;
+    const priceMaxParam = searchParams.get('price_max');
+    if (priceMaxParam) initialFilters.priceMax = parseInt(priceMaxParam, 10) || defaultFilters.priceMax;
+    // ... similar for year and mileage ...
+    return initialFilters;
   });
 
-  // New state for makes and models
+  const [sortOption, setSortOption] = useState<string>(() => {
+    return searchParams.get('sort') || "price-asc";
+  });
+
+  // Other state variables...
   const [makes, setMakes] = useState<CarMake[]>([]);
   const [models, setModels] = useState<CarModel[]>([]);
   const [makesLoading, setMakesLoading] = useState(false);
   const [modelsLoading, setModelsLoading] = useState(false);
-  const [openModelPopover, setOpenModelPopover] = useState(false);
-
-  // Image carousel state for each car
-  const [activeImageIndex, setActiveImageIndex] = useState<{ [key: string]: number }>({});
-
-  // Update to fetch and store models for the selected make
   const [availableModels, setAvailableModels] = useState<{ id: string; name: string }[]>([]);
-  const [modelLoading, setModelLoading] = useState(false);
-
-  // Add search functionality for model selection
-  const [modelSearchTerm, setModelSearchTerm] = useState('');
-
-  // Add this state variable near the other state declarations (around line 158)
-  const [sortOption, setSortOption] = useState<string>("price-asc");
-
-  // Add new state for AI search
+  const [activeImageIndex, setActiveImageIndex] = useState<{ [key: string]: number }>({});
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [aiSearchInput, setAiSearchInput] = useState("");
   const [aiSearchLoading, setAiSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
 
-  // Fetch car data
-  useEffect(() => {
-    const fetchCars = async () => {
-      setLoading(true);
-      setError(null);
+  // --- Data Fetching and Filtering Logic ---
 
-      try {
-        // Add sort parameters to initial fetch
-        const [sortBy, sortOrder] = parseSortOption(sortOption);
-        const queryParams = new URLSearchParams({
-          sortBy,
-          sortOrder
-        });
+  const fetchAndSetCars = useCallback(async (currentFilters: FilterState, currentSort: string) => {
+    setLoading(true);
+    setError(null);
+    const queryParams = new URLSearchParams();
 
-        const response = await fetch(`/api/inventory?${queryParams.toString()}`);
-        if (!response.ok) {
-          throw new Error('Failed to fetch inventory');
-        }
+    // Build query params (ensure default values are not added unless necessary)
+    if (currentFilters.make !== defaultFilters.make) queryParams.append('make', currentFilters.make);
+    if (currentFilters.model && currentFilters.model !== defaultFilters.model && currentFilters.model !== "any") queryParams.append('model', currentFilters.model);
+    if (currentFilters.yearMin > defaultFilters.yearMin) queryParams.append('year_from', currentFilters.yearMin.toString());
+    if (currentFilters.yearMax < defaultFilters.yearMax) queryParams.append('year_to', currentFilters.yearMax.toString());
+    if (currentFilters.priceMin > defaultFilters.priceMin) queryParams.append('price_min', currentFilters.priceMin.toString());
+    if (currentFilters.priceMax < defaultFilters.priceMax) queryParams.append('price_max', currentFilters.priceMax.toString());
+    if (currentFilters.mileageMin > defaultFilters.mileageMin) queryParams.append('mileage_min', currentFilters.mileageMin.toString());
+    if (currentFilters.mileageMax < defaultFilters.mileageMax) queryParams.append('mileage_max', currentFilters.mileageMax.toString());
+    if (currentFilters.fuelType !== defaultFilters.fuelType) queryParams.append('fuel_type', currentFilters.fuelType);
+    if (currentFilters.transmission !== defaultFilters.transmission) queryParams.append('transmission', currentFilters.transmission);
+    if (currentFilters.condition !== defaultFilters.condition) queryParams.append('condition', currentFilters.condition);
+    if (currentFilters.bodyType !== defaultFilters.bodyType) queryParams.append('body_type', currentFilters.bodyType);
 
-        const result = await response.json();
+    const [sortBy, sortOrder] = parseSortOption(currentSort);
+    queryParams.append('sortBy', sortBy);
+    queryParams.append('sortOrder', sortOrder);
+    // Add combined sort option to URL for easier state restoration
+    if (currentSort !== "price-asc") { // Only add if not default
+      queryParams.append('sort', currentSort);
+    }
 
-        // Check if the API returned the expected format (object with data property)
-        if (result && result.data && Array.isArray(result.data)) {
-          setCars(result.data);
-        } else if (Array.isArray(result)) {
-          // Handle legacy format (direct array)
-          setCars(result);
-        } else {
-          // If data is not in expected format
-          console.error('Unexpected data format:', result);
-          setError('Received invalid data format from server');
-          setCars([]);
-        }
-      } catch (err) {
-        console.error('Error fetching cars:', err);
-        setError('Failed to load inventory. Please try again later.');
-        setCars([]);
-      } finally {
-        setLoading(false);
+
+    const searchString = queryParams.toString();
+    // Use router.replace to update URL without adding to history, disable scroll restoration
+    // Only update if the search string actually changed
+    if (searchString !== searchParams.toString().split('?')[1]) { // Compare only query part
+      router.replace(`/inventory?${searchString}`, { scroll: false });
+    }
+
+
+    console.log("Fetching inventory with:", searchString || " (no params)");
+
+    try {
+      // Ensure API endpoint exists and handles parameters correctly
+      const response = await fetch(`/api/inventory?${searchString}`);
+      if (!response.ok) {
+        throw new Error(`API Error (${response.status}): ${await response.text()}`);
       }
+      const result = await response.json();
+
+      if (result && result.data && Array.isArray(result.data)) {
+        setCars(result.data);
+      } else {
+        console.error('Unexpected API data format:', result);
+        setError('Received invalid data format from server');
+        setCars([]);
+      }
+    } catch (err) {
+      console.error('Error fetching cars:', err);
+      setError(`Failed to load inventory. ${err instanceof Error ? err.message : 'Please try again later.'}`);
+      setCars([]); // Clear cars on error
+    } finally {
+      setLoading(false);
+    }
+  }, [router, searchParams]);
+
+  // Effect to fetch initial cars or when sort/filters change via state
+  useEffect(() => {
+    console.log("Filters/Sort state changed, refetching cars...");
+    fetchAndSetCars(filters, sortOption);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters, sortOption]); // Runs when filters or sortOption state objects change
+
+  // Effect to synchronize filters state *from* URL search params changes (e.g., back/forward nav)
+  useEffect(() => {
+    // Function to safely parse numbers from params
+    const getIntParam = (name: string, defaultValue: number): number => {
+      const param = searchParams.get(name);
+      return param ? (parseInt(param, 10) || defaultValue) : defaultValue;
     };
 
-    fetchCars();
-  }, [sortOption]); // Add sortOption to dependencies
+    // Construct filter state based purely on current URL params
+    const filtersFromUrl: FilterState = {
+      make: searchParams.get('make') || defaultFilters.make,
+      model: searchParams.get('model') || defaultFilters.model,
+      yearMin: getIntParam('year_from', defaultFilters.yearMin),
+      yearMax: getIntParam('year_to', defaultFilters.yearMax),
+      priceMin: getIntParam('price_min', defaultFilters.priceMin),
+      priceMax: getIntParam('price_max', defaultFilters.priceMax),
+      mileageMin: getIntParam('mileage_min', defaultFilters.mileageMin),
+      mileageMax: getIntParam('mileage_max', defaultFilters.mileageMax),
+      fuelType: searchParams.get('fuel_type') || defaultFilters.fuelType,
+      transmission: searchParams.get('transmission') || defaultFilters.transmission,
+      condition: searchParams.get('condition') || defaultFilters.condition,
+      bodyType: searchParams.get('body_type') || searchParams.get('type') || defaultFilters.bodyType,
+    };
+    const sortFromUrl = searchParams.get('sort') || "price-asc";
 
-  // Fetch car makes data
+    // Check if the derived state from URL differs from the current component state
+    const filtersDiffer = JSON.stringify(filtersFromUrl) !== JSON.stringify(filters);
+    const sortDiffer = sortFromUrl !== sortOption;
+
+
+    if (filtersDiffer || sortDiffer) {
+      console.log("URL changed (e.g., back/forward nav), syncing state...");
+      if (filtersDiffer) {
+        setFilters(filtersFromUrl);
+      }
+      if (sortDiffer) {
+        setSortOption(sortFromUrl);
+      }
+      // The state updates above will trigger the main fetch useEffect
+    }
+  }, [searchParams]); // Only depends on searchParams object reference
+
+  // Fetch car makes
   useEffect(() => {
     const fetchMakes = async () => {
       setMakesLoading(true);
       try {
-        const response = await fetch('/api/car-makes');
-        if (!response.ok) {
-          throw new Error('Failed to fetch car makes');
-        }
+        const response = await fetch('/api/car-makes'); // Ensure this API route exists
+        if (!response.ok) throw new Error('Failed to fetch makes');
         const data = await response.json();
-        setMakes(data);
+        setMakes(data || []); // Handle empty response
       } catch (err) {
         console.error('Error fetching car makes:', err);
-        // Don't set the main error state as this is not critical
+        // Optionally show a non-critical error to the user
       } finally {
         setMakesLoading(false);
       }
     };
-
     fetchMakes();
   }, []);
 
-  // Updated: Fetch models when make changes using make_id
+  // Fetch models when make changes
   useEffect(() => {
-    if (filters.make === "Any") {
+    if (filters.make === "Any" || filters.make === defaultFilters.make) {
       setAvailableModels([]);
       return;
     }
-
-    // Find the selected make's ID
     const selectedMake = makes.find(make => make.name === filters.make);
     if (!selectedMake) {
-      console.error('Selected make not found in makes list');
       setAvailableModels([]);
       return;
     }
 
-    setModelLoading(true);
-
-    fetch(`/api/car-models?make_id=${selectedMake.id}`)
+    setModelsLoading(true);
+    fetch(`/api/car-models?make_id=${selectedMake.id}`) // Ensure this API route exists
       .then(res => {
         if (!res.ok) throw new Error('Failed to fetch models');
         return res.json();
       })
-      .then(data => {
-        setAvailableModels(data);
-      })
+      .then(data => setAvailableModels(data || []))
       .catch(err => {
         console.error('Error fetching car models:', err);
         setAvailableModels([]);
       })
-      .finally(() => {
-        setModelLoading(false);
-      });
-  }, [filters.make, makes]);
+      .finally(() => setModelsLoading(false));
+  }, [filters.make, makes]); // Depends on filters.make and the makes list
 
-  // Format price as currency
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      maximumFractionDigits: 0
-    }).format(price);
-  };
 
-  // Updated handleFilterChange to reset model when make changes
-  const handleFilterChange = (name: string, value: string | number) => {
-    if (name === "make" && value !== filters.make) {
-      // Fix the type issue by ensuring we're setting a string for make
-      setFilters(prev => ({
-        ...prev,
-        [name]: value as string, // Explicitly cast to string when name is "make"
-        model: ""
-      }));
-    } else {
-      setFilters(prev => ({ ...prev, [name]: value }));
-    }
-  };
+  // --- Event Handlers ---
 
-  // Reset filters
-  const resetFilters = () => {
-    setFilters({
-      make: "Any",
-      model: "",
-      yearMin: 2010,
-      yearMax: 2024,
-      priceMin: 0,
-      priceMax: 150000,
-      mileageMin: 0,
-      mileageMax: 100000,
-      fuelType: "Any",
-      transmission: "Any",
-      condition: "Any",
-      bodyType: "Any"
+  const handleFilterChange = (name: keyof FilterState, value: string | number) => {
+    setFilters(prev => {
+      const newState = { ...prev, [name]: value };
+      if (name === "make" && value !== prev.make) {
+        newState.model = ""; // Reset model if make changes
+      }
+      // Reset make if body type is changed back to Any? Optional UX decision.
+      // if (name === "bodyType" && value === "Any") {
+      //     newState.make = "Any";
+      //     newState.model = "";
+      // }
+      return newState;
     });
+    // Main fetch useEffect will trigger due to state change
   };
 
-  // Updated carousel navigation functions to use dynamic image count
-  const nextImage = (carId: string, imageCount: number) => {
-    if (imageCount <= 0) return;
+  const handleSliderChange = (nameMin: keyof FilterState, nameMax: keyof FilterState, value: number[]) => {
+    setFilters(prev => ({
+      ...prev,
+      [nameMin]: value[0],
+      [nameMax]: value[1],
+    }));
+    // Main fetch useEffect will trigger due to state change
+  };
 
+  // Function is kept for potential explicit "Apply" button, though immediate updates are default now
+  const applyFilters = () => {
+    console.log("Manual Apply Filters triggered (refetching with current state)");
+    fetchAndSetCars(filters, sortOption);
+    trackSearchInteraction(filters); // Track when explicitly applied
+  };
+
+  const resetFilters = () => {
+    // Check if already default to avoid unnecessary state update and fetch
+    if (JSON.stringify(filters) === JSON.stringify(defaultFilters) && sortOption === "price-asc") {
+      return;
+    }
+    setFilters(defaultFilters);
+    setSortOption("price-asc");
+    // Update URL to reflect reset state
+    router.replace('/inventory', { scroll: false });
+    // Main fetch useEffect will trigger due to state change
+  };
+
+  const handleSortChange = (value: string) => {
+    // Check if sort option actually changed
+    if (value === sortOption) return;
+    setSortOption(value);
+    // Main fetch useEffect will trigger due to state change
+  };
+
+  const nextImage = (carId: string, imageCount: number) => {
+    if (!carId || imageCount <= 1) return;
     setActiveImageIndex(prev => ({
       ...prev,
-      [carId]: ((prev[carId] || 0) + 1) % imageCount // Dynamic count instead of hardcoded 3
+      [carId]: ((prev[carId] || 0) + 1) % imageCount
     }));
   };
 
   const prevImage = (carId: string, imageCount: number) => {
-    if (imageCount <= 0) return;
-
+    if (!carId || imageCount <= 1) return;
     setActiveImageIndex(prev => ({
       ...prev,
-      [carId]: ((prev[carId] || 0) - 1 + imageCount) % imageCount // Dynamic count
+      [carId]: ((prev[carId] || 0) - 1 + imageCount) % imageCount
     }));
   };
 
-  // New state for advanced filters
-  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
-
-  // Toggle advanced filters
   const toggleAdvancedFilters = () => {
     setShowAdvancedFilters(!showAdvancedFilters);
   };
 
-  // Add this UUID validation helper function
-  function isValidUuid(uuid: string) {
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    return uuidRegex.test(uuid);
-  }
-
-  // Updated applyFilters function - fixes the setTotalResults error
-  const applyFilters = async () => {
-    setLoading(true);
-    setError(null);
-
-    // Build query string from filters
-    const queryParams = new URLSearchParams();
-
-    // Add all valid filters to query params
-    if (filters.make !== "Any") queryParams.append('make', filters.make);
-    if (filters.model && filters.model !== "Any") queryParams.append('model', filters.model);
-    if (filters.yearMin > 2010) queryParams.append('year_from', filters.yearMin.toString());
-    if (filters.yearMax < 2024) queryParams.append('year_to', filters.yearMax.toString());
-    if (filters.priceMin > 0) queryParams.append('price_min', filters.priceMin.toString());
-    if (filters.priceMax < 150000) queryParams.append('price_max', filters.priceMax.toString());
-    if (filters.mileageMin > 0) queryParams.append('mileage_min', filters.mileageMin.toString());
-    if (filters.mileageMax < 100000) queryParams.append('mileage_max', filters.mileageMax.toString());
-    if (filters.fuelType !== "Any") queryParams.append('fuel_type', filters.fuelType);
-    if (filters.transmission !== "Any") queryParams.append('transmission', filters.transmission);
-    if (filters.condition !== "Any") queryParams.append('condition', filters.condition);
-    if (filters.bodyType !== "Any") queryParams.append('body_type', filters.bodyType);
-
-    // Add sort parameters based on sortOption
-    const [sortBy, sortOrder] = parseSortOption(sortOption);
-    queryParams.append('sortBy', sortBy);
-    queryParams.append('sortOrder', sortOrder);
-
-    // Add debug logging before the fetch call
-    console.log("Querying inventory with:", queryParams.toString());
-
+  // Debounced tracking or track on explicit actions (like apply/view details) might be better
+  const trackSearchInteraction = async (appliedFilters: FilterState, clickedListingId: string | null = null) => {
+    console.log("Tracking search interaction...");
+    // Basic implementation, consider debouncing or tracking on specific events
     try {
-      const response = await fetch(`/api/inventory?${queryParams.toString()}`);
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch filtered results');
-      }
-
-      const data = await response.json();
-
-      // Update this line to match the backend response structure
-      setCars(Array.isArray(data.data) ? data.data : []);
-
-      // After successfully fetching and setting cars data
-      // Track the search interaction
-      try {
-        // Get session ID from localStorage or create a new one
-        let sessionId = localStorage.getItem('session_id');
-        if (!sessionId) {
-          sessionId = uuidv4();
-          localStorage.setItem('session_id', sessionId);
-        }
-
-        // Extract make_id and model_id if they exist in the filtered results
-        let makeId: string | null = null;
-        let modelId: string | null = null;
-
-        // If make is selected, find the corresponding make_id
-        if (filters.make && filters.make !== "Any") {
-          const selectedMake = makes.find(make => make.name === filters.make);
-          if (selectedMake) {
-            makeId = selectedMake.id;
-          }
-        }
-
-        // If model is selected, find the corresponding model_id
-        if (filters.model && filters.model !== "Any") {
-          const selectedModel = availableModels.find(model => model.name === filters.model);
-          if (selectedModel) {
-            modelId = selectedModel.id;
-          }
-        }
-
-        // Send the tracking data
-        await fetch('/api/track/search', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            session_id: sessionId,
-            make_id: makeId,
-            model_id: modelId,
-            filters: filters,
-            clicked_listing_id: null
-          }),
-        });
-      } catch (trackingError) {
-        // Only log a warning, don't disrupt the main functionality
-        console.warn('Failed to track search interaction:', trackingError);
-      }
-    } catch (err) {
-      console.error('Error fetching filtered results:', err);
-      setError('Failed to load vehicles. Please try again.');
-      setCars([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Add this helper function to parse the sort option
-  const parseSortOption = (option: string): [string, string] => {
-    // Default to created_at-desc if invalid option
-    if (!option || !option.includes('-')) return ['created_at', 'desc'];
-
-    const [field, direction] = option.split('-');
-    return [field, direction];
-  };
-
-  // Add function to handle AI intent search
-  const handleAiSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!aiSearchInput.trim()) {
-      return;
-    }
-
-    setAiSearchLoading(true);
-    setSearchError(null);
-
-    try {
-      // Get session ID from localStorage or create a new one
       let sessionId = localStorage.getItem('session_id');
       if (!sessionId) {
         sessionId = uuidv4();
         localStorage.setItem('session_id', sessionId);
       }
 
+      let makeId: string | null = null;
+      if (appliedFilters.make && appliedFilters.make !== "Any") {
+        const selectedMake = makes.find(make => make.name === appliedFilters.make);
+        if (selectedMake) makeId = selectedMake.id;
+      }
+
+      let modelId: string | null = null;
+      if (appliedFilters.model && appliedFilters.model !== "" && appliedFilters.model !== "Any" && availableModels.length > 0) {
+        const selectedModel = availableModels.find(model => model.name === appliedFilters.model);
+        if (selectedModel) modelId = selectedModel.id;
+      }
+
+      // Ensure API route exists and handles the request
+      await fetch('/api/track/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: sessionId,
+          make_id: makeId,
+          model_id: modelId,
+          filters: appliedFilters,
+          sort_option: sortOption, // Include sort option in tracking
+          results_count: cars.length, // Include how many results were shown
+          clicked_listing_id: clickedListingId
+        }),
+      });
+    } catch (trackingError) {
+      console.warn('Failed to track search interaction:', trackingError);
+    }
+  };
+
+  const handleAiSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmedInput = aiSearchInput.trim();
+    if (!trimmedInput) return;
+
+    setAiSearchLoading(true);
+    setSearchError(null);
+
+    try {
+      // Ensure API route exists
       const response = await fetch('/api/ai-intent', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          userInput: aiSearchInput
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userInput: trimmedInput }),
       });
 
       if (!response.ok) {
-        const error = await response.text();
-        throw new Error(error || 'Failed to process your search');
+        const errorText = await response.text();
+        throw new Error(errorText || 'AI search request failed');
       }
 
       const { parsed_filters, confidence, success } = await response.json();
 
       if (!success || !parsed_filters) {
-        throw new Error('Could not understand your search. Please try again with different wording.');
+        throw new Error('Could not understand your search request.');
       }
 
-      // Update filters based on AI results
-      const newFilters = { ...filters };
+      // Update filters state based on AI results
+      setFilters(prevFilters => {
+        const newFilters = { ...prevFilters }; // Start with existing filters
 
-      // Map the parsed_filters to our filter state
-      if (parsed_filters.make) newFilters.make = parsed_filters.make;
-      if (parsed_filters.model) newFilters.model = parsed_filters.model;
-      if (parsed_filters.body_type) newFilters.bodyType = parsed_filters.body_type;
+        // Map parsed fields carefully, checking for existence
+        if (parsed_filters.make) newFilters.make = parsed_filters.make;
+        if (parsed_filters.model) newFilters.model = parsed_filters.model;
+        if (parsed_filters.body_type) newFilters.bodyType = parsed_filters.body_type;
+        if (typeof parsed_filters.year_min === 'number') newFilters.yearMin = parsed_filters.year_min;
+        if (typeof parsed_filters.year_max === 'number') newFilters.yearMax = parsed_filters.year_max;
+        if (typeof parsed_filters.price_min === 'number') newFilters.priceMin = parsed_filters.price_min;
+        if (typeof parsed_filters.price_max === 'number') newFilters.priceMax = parsed_filters.price_max;
+        if (typeof parsed_filters.mileage_min === 'number') newFilters.mileageMin = parsed_filters.mileage_min;
+        if (typeof parsed_filters.mileage_max === 'number') newFilters.mileageMax = parsed_filters.mileage_max;
+        if (parsed_filters.fuel_type) newFilters.fuelType = parsed_filters.fuel_type;
+        if (parsed_filters.transmission) newFilters.transmission = parsed_filters.transmission;
+        if (parsed_filters.condition) newFilters.condition = parsed_filters.condition;
 
-      // Handle numeric ranges
-      if (parsed_filters.year_min) newFilters.yearMin = parsed_filters.year_min;
-      if (parsed_filters.year_max) newFilters.yearMax = parsed_filters.year_max;
-      if (parsed_filters.price_min) newFilters.priceMin = parsed_filters.price_min;
-      if (parsed_filters.price_max) newFilters.priceMax = parsed_filters.price_max;
-      if (parsed_filters.mileage_min) newFilters.mileageMin = parsed_filters.mileage_min;
-      if (parsed_filters.mileage_max) newFilters.mileageMax = parsed_filters.mileage_max;
+        // Reset model if make was changed by AI but model wasn't provided
+        if (parsed_filters.make && !parsed_filters.model && newFilters.make !== prevFilters.make) {
+          newFilters.model = "";
+        }
+        return newFilters;
+      });
 
-      // Handle other categorical filters
-      if (parsed_filters.fuel_type) newFilters.fuelType = parsed_filters.fuel_type;
-      if (parsed_filters.transmission) newFilters.transmission = parsed_filters.transmission;
-      if (parsed_filters.condition) newFilters.condition = parsed_filters.condition;
-
-      // Update filter state
-      setFilters(newFilters);
-
-      // Auto-apply filters
-      setTimeout(() => {
-        applyFilters();
-
-        // Show success message with confidence level
-        toast({
-          title: "Search processed",
-          description: confidence > 0.8
-            ? "Found exactly what you're looking for!"
-            : "Found potential matches. You can adjust filters if needed.",
-          variant: confidence > 0.8 ? "default" : "destructive"
-        });
-      }, 100);
+      // Main fetch useEffect will trigger. Show toast feedback.
+      toast({
+        title: "AI Search Applied",
+        description: confidence > 0.7 ? "Filters updated based on your request." : "Interpreted your search, review filters.",
+        variant: confidence > 0.7 ? "default" : "destructive"
+      });
 
     } catch (error) {
       console.error('AI search error:', error);
-      setSearchError(error instanceof Error ? error.message : 'Failed to process your search');
+      const message = error instanceof Error ? error.message : 'An unknown error occurred';
+      setSearchError(message);
+      toast({ title: "AI Search Error", description: message, variant: "destructive" });
     } finally {
       setAiSearchLoading(false);
     }
   };
 
-  if (loading) {
-    return <div className="min-h-screen flex items-center justify-center">
-      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
-    </div>;
+
+  // --- Render Logic ---
+
+  // Use the skeleton if initial loading and no cars yet
+  if (loading && cars.length === 0 && !error) {
+    return <InventoryLoadingSkeleton />;
   }
 
-  if (error) {
-    return <div className="min-h-screen flex items-center justify-center">
-      <div className="text-center">
-        <h2 className="text-xl font-bold text-red-500">Error</h2>
-        <p>{error}</p>
-        <Button className="mt-4" onClick={() => window.location.reload()}>Try Again</Button>
+  // Show persistent error if loading failed critically before any cars were loaded
+  if (error && cars.length === 0) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="text-center p-6 bg-red-50 rounded-lg shadow-md max-w-md">
+          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-red-700 mb-2">Error Loading Inventory</h2>
+          <p className="text-red-600 mb-4">{error}</p>
+          <Button onClick={() => fetchAndSetCars(filters, sortOption)}> {/* Allow retry */}
+            Try Again
+          </Button>
+        </div>
       </div>
-    </div>;
+    );
   }
 
   return (
     <div className="min-h-screen pb-12">
-      {/* Page Header */}
+      {/* Header */}
       <div className="bg-muted/40 py-12">
-        <div className="container max-w-6xl mx-auto px-6">
-          <div className="text-center">
-            <h1 className="text-4xl font-bold mb-4">Browse Our Inventory</h1>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Explore our extensive collection of premium vehicles. Use the filters to find your perfect match.
-            </p>
-          </div>
+        <div className="container max-w-6xl mx-auto px-6 text-center">
+          <h1 className="text-4xl font-bold mb-4">Browse Our Inventory</h1>
+          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+            Find your next vehicle using our smart filters or describe what you're looking for.
+          </p>
         </div>
       </div>
 
       <section className="container max-w-6xl mx-auto px-6">
-        {/* AI Search Input - Add this before the filters section */}
-        <div className="bg-background py-6 border-b mb-6">
-          <div className="container max-w-6xl mx-auto px-4">
-            <div className="bg-gradient-to-r from-primary/10 to-secondary/10 p-6 rounded-lg shadow-sm mb-8">
-              <h2 className="text-lg font-medium mb-4 flex items-center">
-                <Sparkles className="h-5 w-5 mr-2 text-primary" />
-                What are you looking for?
-              </h2>
-
-              <form onSubmit={handleAiSearch} className="flex gap-2">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    value={aiSearchInput}
-                    onChange={(e) => setAiSearchInput(e.target.value)}
-                    placeholder="e.g. A weekend coupe under 50k"
-                    className="pl-10 w-full"
-                    disabled={aiSearchLoading}
-                  />
-                </div>
-                <Button type="submit" disabled={aiSearchLoading}>
-                  {aiSearchLoading ? "Searching..." : "Search"}
-                </Button>
-              </form>
-
-              {searchError && (
-                <div className="mt-2 text-sm text-red-500 flex items-center">
-                  <AlertCircle className="h-4 w-4 mr-1" />
-                  {searchError}
-                </div>
-              )}
-            </div>
+        {/* AI Search */}
+        <div className="py-6 mb-6">
+          <div className="bg-gradient-to-r from-primary/10 to-secondary/10 p-6 rounded-lg shadow-sm">
+            <h2 className="text-lg font-medium mb-4 flex items-center">
+              <Sparkles className="h-5 w-5 mr-2 text-primary" />
+              Describe Your Ideal Car
+            </h2>
+            <form onSubmit={handleAiSearch} className="flex flex-col sm:flex-row gap-2">
+              {/* Input and Button */}
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  value={aiSearchInput}
+                  onChange={(e) => setAiSearchInput(e.target.value)}
+                  placeholder="e.g., Sporty coupe under $50k, low miles"
+                  className="pl-10 w-full"
+                  disabled={aiSearchLoading}
+                  aria-label="Describe desired car"
+                />
+              </div>
+              <Button type="submit" disabled={aiSearchLoading || !aiSearchInput.trim()} className="w-full sm:w-auto">
+                {aiSearchLoading ? (
+                  <><div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-current mr-2"></div> Searching...</>
+                ) : "Find My Car"}
+              </Button>
+            </form>
+            {/* AI Search Error Display */}
+            {searchError && (
+              <div className="mt-2 text-sm text-red-600 flex items-center gap-1">
+                <AlertCircle className="h-4 w-4" /> {searchError}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Filters section - Static with no scroll behavior */}
-        <div className="bg-background py-8 border-b mb-6">
+        {/* Filters Section - Sticky */}
+        <div className="bg-background py-4 border-y mb-6 sticky top-0 z-30 shadow-sm">
           <div className="container max-w-6xl mx-auto px-4">
-            <div className="bg-white p-6 rounded-lg shadow-sm">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h2 className="text-lg font-medium">Filter Vehicles</h2>
-                </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-3 items-end">
+              {/* Make */}
+              <div className="space-y-1">
+                <label htmlFor="make-select" className="text-xs font-medium text-gray-600">Make</label>
+                <Select value={filters.make} onValueChange={(v) => handleFilterChange("make", v)} disabled={makesLoading}>
+                  <SelectTrigger id="make-select" className="h-9 text-sm"><SelectValue placeholder="Any Make" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Any">Any Make</SelectItem>
+                    {makes.map(m => <SelectItem key={m.id} value={m.name}>{m.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
-
-              {/* Basic Filters - Improved spacing */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-6 mb-8">
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium mb-2">Make</label>
-                  <Select
-                    value={filters.make}
-                    onValueChange={(value) => handleFilterChange("make", value)}
-                    disabled={makesLoading}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select make" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Any">Any</SelectItem>
-                      {makes.map(make => (
-                        <SelectItem key={make.id} value={make.name}>{make.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium mb-2">Model</label>
-                  <Select
-                    value={filters.model}
-                    onValueChange={(value) => handleFilterChange("model", value)}
-                    disabled={filters.make === "Any" || modelLoading}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder={modelLoading ? "Loading models..." : "Select model"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {/* Add search input */}
-                      <div className="px-2 py-2 sticky top-0 bg-background z-10 border-b">
-                        <Input
-                          placeholder="Search models..."
-                          className="h-8"
-                          onChange={(e) => setModelSearchTerm(e.target.value)}
-                          value={modelSearchTerm}
-                          onClick={(e) => e.stopPropagation()} // Prevent closing dropdown on input click
-                        />
-                      </div>
-
-                      <SelectItem value="any">Any</SelectItem>
-
-                      {availableModels.length > 0 ? (
-                        // Filter models by both name validity and search term
-                        availableModels
-                          .filter(model =>
-                            model.name &&
-                            model.name.trim() !== '' &&
-                            (!modelSearchTerm || model.name.toLowerCase().includes(modelSearchTerm.toLowerCase()))
-                          )
-                          .map(model => (
-                            <SelectItem key={model.id} value={model.name}>
-                              {model.name}
-                            </SelectItem>
-                          ))
-                      ) : (
-                        // Show when no models are available
-                        !modelLoading &&
-                        <SelectItem value="no-models" disabled>
-                          {modelSearchTerm ? "No matching models" : "No models available"}
-                        </SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium mb-2">Body Type</label>
-                  <Select
-                    value={filters.bodyType}
-                    onValueChange={(value) => handleFilterChange("bodyType", value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select body type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {['Any', 'Sedan', 'SUV', 'Coupe', 'Convertible', 'Hatchback', 'Wagon', 'Truck', 'Van'].map(type => (
-                        <SelectItem key={type} value={type}>{type}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+              {/* Model */}
+              <div className="space-y-1">
+                <label htmlFor="model-select" className="text-xs font-medium text-gray-600">Model</label>
+                <Select value={filters.model || "any"} onValueChange={(v) => handleFilterChange("model", v === "any" ? "" : v)} disabled={filters.make === "Any" || modelsLoading || !availableModels.length}>
+                  <SelectTrigger id="model-select" className="h-9 text-sm"><SelectValue placeholder={modelsLoading ? "Loading..." : "Any Model"} /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="any">Any Model</SelectItem>
+                    {availableModels.map(m => <SelectItem key={m.id} value={m.name}>{m.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
-
-              {/* Second row - 3 sliders in one row */}
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <div className="flex justify-between mb-2">
-                    <label className="text-sm font-medium">Price Range</label>
-                    <span className="text-xs text-muted-foreground">
-                      {formatPrice(filters.priceMin)} - {formatPrice(filters.priceMax)}
-                    </span>
-                  </div>
-                  <Slider
-                    defaultValue={[filters.priceMin, filters.priceMax]}
-                    max={150000}
-                    step={1000}
-                    onValueChange={(value: number[]) => {
-                      handleFilterChange("priceMin", value[0]);
-                      handleFilterChange("priceMax", value[1]);
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <div className="flex justify-between mb-2">
-                    <label className="text-sm font-medium">Year Range</label>
-                    <span className="text-xs text-muted-foreground">
-                      {filters.yearMin} - {filters.yearMax}
-                    </span>
-                  </div>
-                  <Slider
-                    defaultValue={[filters.yearMin, filters.yearMax]}
-                    min={2010}
-                    max={2024}
-                    step={1}
-                    onValueChange={(value: number[]) => {
-                      handleFilterChange("yearMin", value[0]);
-                      handleFilterChange("yearMax", value[1]);
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <div className="flex justify-between mb-2">
-                    <label className="text-sm font-medium">Mileage Range</label>
-                    <span className="text-xs text-muted-foreground">
-                      {filters.mileageMin.toLocaleString()} - {filters.mileageMax.toLocaleString()} mi
-                    </span>
-                  </div>
-                  <Slider
-                    defaultValue={[filters.mileageMin, filters.mileageMax]}
-                    max={100000}
-                    step={1000}
-                    onValueChange={(value: number[]) => {
-                      handleFilterChange("mileageMin", value[0]);
-                      handleFilterChange("mileageMax", value[1]);
-                    }}
-                  />
-                </div>
+              {/* Body Type */}
+              <div className="space-y-1">
+                <label htmlFor="body-type-select" className="text-xs font-medium text-gray-600">Body Type</label>
+                <Select value={filters.bodyType} onValueChange={(v) => handleFilterChange("bodyType", v)}>
+                  <SelectTrigger id="body-type-select" className="h-9 text-sm"><SelectValue placeholder="Any Body Type" /></SelectTrigger>
+                  <SelectContent>
+                    {['Any', 'Sedan', 'SUV', 'Coupe', 'Convertible', 'Hatchback', 'Wagon', 'Truck', 'Van'].map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
-
-              {/* Third row - Fuel, Transmission, Condition arranged horizontally */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-6 mt-6">
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium mb-2">Fuel Type</label>
-                  <Select
-                    value={filters.fuelType}
-                    onValueChange={(value) => handleFilterChange("fuelType", value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select fuel type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {['Any', 'Gasoline', 'Diesel', 'Hybrid', 'Electric'].map(type => (
-                        <SelectItem key={type} value={type}>{type}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium mb-2">Transmission</label>
-                  <Select
-                    value={filters.transmission}
-                    onValueChange={(value) => handleFilterChange("transmission", value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select transmission" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {['Any', 'Automatic', 'Manual', 'CVT', 'PDK'].map(transmission => (
-                        <SelectItem key={transmission} value={transmission}>{transmission}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium mb-2">Condition</label>
-                  <Select
-                    value={filters.condition}
-                    onValueChange={(value) => handleFilterChange("condition", value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select condition" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {['Any', 'New', 'Used'].map(condition => (
-                        <SelectItem key={condition} value={condition}>{condition}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+              {/* Reset Button - Placed here for better alignment on larger screens */}
+              <div className="flex justify-end">
+                <Button variant="ghost" onClick={resetFilters} size="sm" className="text-xs text-muted-foreground hover:text-primary self-end h-9">
+                  <RefreshCcw className="mr-1 h-3 w-3" /> Reset All
+                </Button>
               </div>
             </div>
 
-            {/* Filter Toggle Button - Now inline */}
-            <div className="mb-6 flex justify-center">
-              <Button
-                onClick={toggleAdvancedFilters}
-                className="flex items-center gap-2"
-                variant="outline"
-                size="sm"
-              >
-                {showAdvancedFilters ? (
-                  <>
-                    <ChevronUp className="h-4 w-4" />
-                    <span>Hide Filters</span>
-                  </>
-                ) : (
-                  <>
-                    <Filter className="h-4 w-4" />
-                    <span>Show Advanced Filters</span>
-                  </>
-                )}
-              </Button>
-            </div>
+            {/* Sliders could go here in a collapsible section if needed */}
+            {/* <Button onClick={toggleAdvancedFilters}>Advanced</Button> */}
+            {/* {showAdvancedFilters && ( ... sliders ... )} */}
 
-            {/* Advanced Filters Panel - Static, not floating */}
-            <div className={`${showAdvancedFilters ? 'block' : 'hidden'} 
-              bg-white rounded-lg p-6 mb-6 w-full`}>
-              <AdvancedCarFilters
-                filters={filters}
-                setFilters={setFilters}
-                onClose={toggleAdvancedFilters}
-                {...{} as any}
-              />
-            </div>
-
-            {/* Filter Actions - Adding onClick handler to Apply Filters button */}
-            <div className="flex gap-2 mt-4">
-              <Button
-                className="flex-1"
-                onClick={applyFilters}
-              >
-                <Filter className="mr-2 h-4 w-4" />
-                Apply Filters
-              </Button>
-
-              <Button
-                variant="outline"
-                onClick={resetFilters}
-                className="flex items-center gap-2"
-              >
-                <RefreshCcw className="h-4 w-4" />
-                Reset Filters
-              </Button>
-            </div>
           </div>
         </div>
 
         {/* Results Count and Sort */}
-        <div className="flex justify-between items-center my-6">
-          <div className="text-muted-foreground">
-            Showing {Array.isArray(cars) ? cars.length : 0} vehicles
+        <div className="flex flex-col sm:flex-row justify-between items-center my-6 pt-4">
+          <div className="text-sm text-muted-foreground mb-2 sm:mb-0">
+            {loading ? "Searching..." : `Showing ${cars.length} vehicle${cars.length !== 1 ? 's' : ''}`}
           </div>
+          {/* Inline Error Message if fetch failed but cars are still displayed */}
+          {error && !loading && cars.length > 0 && (
+            <div className="text-xs text-red-600 flex items-center gap-1 mx-4">
+              <AlertCircle className="h-3 w-3" /> Error updating results.
+            </div>
+          )}
           <div className="flex items-center gap-2">
             <span className="text-sm">Sort by:</span>
-            <Select
-              value={sortOption}
-              onValueChange={(value) => {
-                setSortOption(value);
-                // No need to call applyFilters here as the useEffect will trigger a refetch
-              }}
-            >
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Sort by" />
-              </SelectTrigger>
+            <Select value={sortOption} onValueChange={handleSortChange}>
+              <SelectTrigger className="w-[180px] h-9 text-sm"><SelectValue placeholder="Sort by" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="price-asc">Price: Low to High</SelectItem>
                 <SelectItem value="price-desc">Price: High to Low</SelectItem>
-                <SelectItem value="year-desc">Year: Newest First</SelectItem>
-                <SelectItem value="year-asc">Year: Oldest First</SelectItem>
+                <SelectItem value="year-desc">Year: Newest</SelectItem>
+                <SelectItem value="year-asc">Year: Oldest</SelectItem>
+                <SelectItem value="mileage-asc">Mileage: Lowest</SelectItem>
+                <SelectItem value="created_at-desc">Date Added: Newest</SelectItem>
               </SelectContent>
             </Select>
           </div>
         </div>
 
-        {/* Car Grid with hover effects and image carousel */}
-        <div className="car-cards-container">
-          {error && (
-            <div className="w-full p-4 text-center">
-              <div className="bg-red-50 text-red-700 p-4 rounded-md flex items-center justify-center">
-                <AlertCircle className="h-5 w-5 mr-2" />
-                {error}
-              </div>
+        {/* Car Grid Area */}
+        <div className="relative min-h-[400px]">
+          {/* Loading Overlay - covers grid when loading */}
+          {loading && (
+            <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-20 rounded-lg">
+              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary"></div>
             </div>
           )}
 
-          {loading ? (
-            <div className="w-full flex justify-center items-center py-16">
-              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
-            </div>
-          ) : cars.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12 px-2 sm:px-4">
-              {cars.map((car) => {
-                // Skip rendering if the car doesn't have an ID (should never happen with real DB data)
-                if (!car.id) {
-                  console.warn("Car missing ID, skipping render:", car);
-                  return null;
-                }
-
-                console.log(`Rendering car card for: ${car.make} ${car.model} with ID: ${car.id}`);
-
-                return (
-                  <Card
-                    key={car.id}
-                    className="overflow-hidden transition-all duration-300 hover:shadow-xl hover:scale-[1.02] focus-within:scale-[1.02] focus-within:shadow-xl"
-                  >
-                    {/* Image Carousel */}
-                    <div className="aspect-video relative overflow-hidden bg-muted">
-                      <div className="absolute inset-0 bg-gradient-to-b from-black/20 to-black/0 z-10" />
-
-                      {/* Carousel Images */}
-                      <div className="relative w-full h-full">
-                        {car.images && car.images.length > 0 ? (
-                          // Map through available images
-                          car.images.map((image, index) => (
-                            <div
-                              key={index}
-                              className={`absolute inset-0 transition-opacity duration-500 ${(activeImageIndex[car.id] || 0) === index ? 'opacity-100' : 'opacity-0'
-                                }`}
-                            >
-                              <img
-                                src={image}
-                                alt={`${car.make} ${car.model} - view ${index + 1}`}
-                                className="w-full h-full object-cover"
-                                onError={(e) => {
-                                  // Fallback for broken image links
-                                  (e.target as HTMLImageElement).src = '/images/car-placeholder.jpg';
-                                }}
-                              />
-                            </div>
-                          ))
-                        ) : (
-                          // Fallback for no images
-                          <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
-                            <div className="text-center">
-                              <AlertCircle className="h-10 w-10 mx-auto text-muted-foreground opacity-50" />
-                              <p className="text-sm text-muted-foreground mt-2">No image available</p>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Only show carousel controls if there are multiple images */}
-                        {car.images && car.images.length > 1 && (
-                          <>
-                            <button
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation(); // Prevent event bubbling to card
-                                prevImage(car.id, car.images?.length || 0);
-                                e.currentTarget.blur(); // Remove focus after click
-                              }}
-                              className="absolute left-2 top-1/2 -translate-y-1/2 z-20 text-white/70 hover:text-white transition-colors"
-                              aria-label="Previous image"
-                            >
-                              <ChevronLeft className="h-5 w-5" />
-                            </button>
-
-                            <button
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation(); // Prevent event bubbling to card
-                                nextImage(car.id, car.images?.length || 0);
-                                e.currentTarget.blur(); // Remove focus after click
-                              }}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 z-20 text-white/70 hover:text-white transition-colors"
-                              aria-label="Next image"
-                            >
-                              <ChevronRight className="h-5 w-5" />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-
-                    <CardHeader className="pb-2">
-                      <div className="flex justify-between items-start">
-                        <h3 className="font-bold text-lg">{car.make} {car.model}</h3>
-                        {/* Enhanced Price Display */}
-                        <div className="flex-shrink-0 relative">
-                          <div className="absolute inset-0 bg-primary/10 rounded-full blur-sm"></div>
-                          <div className="relative font-bold text-lg text-primary px-3 py-1 rounded-full border border-primary/20 bg-primary/5">
-                            {formatPrice(car.price || 0)}
-                          </div>
-                        </div>
-                      </div>
-                    </CardHeader>
-
-                    <CardContent className="pb-4">
-                      <div className="grid grid-cols-2 gap-y-2 text-sm text-muted-foreground">
-                        <div className="flex items-center gap-1">
-                          <Fuel className="h-4 w-4" />
-                          <span>{car.fuel_type || "N/A"}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Gauge className="h-4 w-4" />
-                          <span>{car.mileage ? `${car.mileage.toLocaleString()} mi` : "N/A"}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Tag className="h-4 w-4" />
-                          <span>{car.transmission || "N/A"}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Calendar className="h-4 w-4" />
-                          <span>{car.year || "N/A"}</span>
-                        </div>
-                      </div>
-                    </CardContent>
-
-                    <CardFooter className="flex justify-between border-t pt-4">
-                      <Button variant="outline" size="sm">
-                        Add to Compare
-                      </Button>
-                      <Link
-                        href={`/inventory/${car.id}`}
-                        className="flex items-center gap-1"
-                      >
-                        View Details
-                        <ArrowRight className="h-4 w-4" />
-                      </Link>
-                    </CardFooter>
-                  </Card>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="w-full p-8 text-center">
-              <p className="text-muted-foreground">No cars found matching your criteria.</p>
-              <Button onClick={resetFilters} variant="outline" className="mt-4">
-                <RefreshCcw className="mr-2 h-4 w-4" />
-                Reset Filters
+          {/* Grid or No Results Message */}
+          {!loading && cars.length === 0 && !error ? (
+            <div className="w-full p-8 text-center min-h-[300px] flex flex-col items-center justify-center border rounded-lg bg-muted/30">
+              <Search className="h-12 w-12 text-muted-foreground opacity-50 mb-4" />
+              <p className="text-lg font-medium mb-2">No vehicles match your criteria</p>
+              <p className="text-muted-foreground mb-4">Try adjusting filters or use the AI search above.</p>
+              <Button onClick={resetFilters} variant="outline">
+                <RefreshCcw className="mr-2 h-4 w-4" /> Reset Filters
               </Button>
             </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
+              {cars.map((car) => (
+                <Card key={car.id} className="overflow-hidden transition-shadow duration-300 hover:shadow-lg focus-within:shadow-lg group flex flex-col">
+                  {/* Image */}
+                  <div className="aspect-video relative overflow-hidden bg-muted flex-shrink-0">
+                    <div className="absolute inset-0 z-10" /> {/* Optional: Gradient overlay */}
+                    {car.images && car.images.length > 0 ? (
+                      car.images.map((image, index) => (
+                        <div key={index} className={`absolute inset-0 transition-opacity duration-300 ${(activeImageIndex[car.id] || 0) === index ? 'opacity-100' : 'opacity-0'}`}>
+                          <Image fill src={image} alt={`${car.make} ${car.model} view ${index + 1}`} className="object-cover" sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw" priority={index === 0} onError={(e) => e.currentTarget.src = '/images/car-placeholder.jpg'} />
+                        </div>
+                      ))
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
+                        <Image src="/images/car-placeholder.jpg" alt="Placeholder" width={100} height={75} className="opacity-50" />
+                      </div>
+                    )}
+                    {/* Carousel Controls */}
+                    {car.images && car.images.length > 1 && (
+                      <>
+                        <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); prevImage(car.id, car.images!.length); }} className="absolute left-2 top-1/2 -translate-y-1/2 z-20 p-1 rounded-full bg-black/40 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/60 focus:opacity-100" aria-label="Previous image"><ChevronLeft className="h-5 w-5" /></button>
+                        <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); nextImage(car.id, car.images!.length); }} className="absolute right-2 top-1/2 -translate-y-1/2 z-20 p-1 rounded-full bg-black/40 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/60 focus:opacity-100" aria-label="Next image"><ChevronRight className="h-5 w-5" /></button>
+                      </>
+                    )}
+                  </div>
+                  {/* Content */}
+                  <div className="flex flex-col flex-grow p-4">
+                    <div className="flex justify-between items-start gap-2 mb-1">
+                      <h3 className="font-semibold text-base leading-tight group-hover:text-primary transition-colors">{car.make} {car.model}</h3>
+                      <div className="text-base font-bold text-primary whitespace-nowrap">{formatPrice(car.price)}</div>
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-3">{car.year} • {car.condition || 'N/A'}</p>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-muted-foreground mb-4 flex-grow">
+                      <div className="flex items-center gap-1.5"><Fuel size={14} className="flex-shrink-0" /> <span className="truncate">{car.fuel_type || "N/A"}</span></div>
+                      <div className="flex items-center gap-1.5"><Gauge size={14} className="flex-shrink-0" /> <span className="truncate">{formatMileage(car.mileage)}</span></div>
+                      <div className="flex items-center gap-1.5"><Tag size={14} className="flex-shrink-0" /> <span className="truncate">{car.transmission || "N/A"}</span></div>
+                      {car.body_type && <div className="flex items-center gap-1.5"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 16.5V18a2 2 0 0 1-2 2v0a2 2 0 0 1-2-2v-1.5m4-12V5a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v1.5m10 0h.5a2.5 2.5 0 0 1 0 5H3M4 6.5h.5a2.5 2.5 0 0 0 0 5H2" /></svg><span className="truncate">{car.body_type}</span></div>}
+                    </div>
+                    <Link href={`/inventory/${car.id}`} className="mt-auto w-full">
+                      <Button variant="default" size="sm" className="w-full text-sm">
+                        View Details <ArrowRight className="ml-1.5 h-4 w-4" />
+                      </Button>
+                    </Link>
+                  </div>
+                </Card>
+              ))}
+            </div>
           )}
         </div>
 
-        {/* Pagination */}
-        <div className="flex justify-center mb-12">
-          <div className="flex space-x-1">
-            <Button variant="outline" size="icon">
-              <span className="sr-only">Previous page</span>
-              &lt;
-            </Button>
-            <Button variant="outline" size="sm" className="px-4">
-              1
-            </Button>
-            <Button size="sm" className="px-4">
-              2
-            </Button>
-            <Button variant="outline" size="sm" className="px-4">
-              3
-            </Button>
-            <Button variant="outline" size="icon">
-              <span className="sr-only">Next page</span>
-              &gt;
-            </Button>
-          </div>
-        </div>
+        {/* Pagination Placeholder */}
+        {/* Add real pagination based on total count from API */}
+
       </section>
     </div>
   );
-} 
+}
