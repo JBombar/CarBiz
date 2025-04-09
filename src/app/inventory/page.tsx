@@ -1141,9 +1141,35 @@ function InventoryPage() {
                         Add to Compare
                       </Button>
                       <Link
-                        href={`/inventory/${car.id}`}
-                        onClick={() => trackSearchInteraction(filters, car.id)}
-                        className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-9 px-4 py-2"
+                        href={car && car.id ? `/inventory/${car.id}` : '#'}
+                        onClick={(e) => {
+                          // Prevent navigation if car.id is missing
+                          if (!car || !car.id) {
+                            e.preventDefault();
+                            console.error("View Details clicked with invalid car.id:", car?.id);
+                            toast({
+                              title: "Error",
+                              description: "Cannot view details: Car ID is missing.",
+                              variant: "destructive"
+                            });
+                            return;
+                          }
+
+                          // Track the interaction but don't block navigation if it fails
+                          try {
+                            if (typeof trackSearchInteraction === 'function') {
+                              trackSearchInteraction(filters, car.id);
+                            } else {
+                              console.warn("trackSearchInteraction function is not available.");
+                            }
+                          } catch (error) {
+                            console.error("Error during trackSearchInteraction:", error);
+                            // Do NOT prevent navigation - let the link proceed even if tracking fails
+                          }
+                        }}
+                        className={`inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-9 px-4 py-2 ${!car || !car.id ? 'opacity-50 pointer-events-none' : ''}`}
+                        aria-disabled={!car || !car.id}
+                        tabIndex={!car || !car.id ? -1 : undefined}
                       >
                         View Details
                         <ArrowRight className="ml-2 h-4 w-4" />

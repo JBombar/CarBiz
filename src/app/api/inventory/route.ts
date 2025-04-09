@@ -1,3 +1,6 @@
+export const dynamic = 'force-dynamic'; // <--- ADD THIS LINE
+
+
 // app/api/inventory/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
