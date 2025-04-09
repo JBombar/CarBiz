@@ -515,7 +515,7 @@ export default function InventoryPage() {
           description: confidence > 0.8
             ? "Found exactly what you're looking for!"
             : "Found potential matches. You can adjust filters if needed.",
-          variant: confidence > 0.8 ? "default" : "secondary"
+          variant: confidence > 0.8 ? "default" : "destructive"
         });
       }, 100);
 

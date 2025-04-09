@@ -5,7 +5,7 @@ type ToastProps = {
   title: string | React.ReactNode;
   description?: string | React.ReactNode;
   duration?: number;
-  variant?: 'default' | 'destructive';
+  variant?: 'default' | 'destructive' | 'secondary';
   action?: React.ReactNode;
 };
 
