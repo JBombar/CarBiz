@@ -475,7 +475,6 @@ export default function InventoryPage() {
     const uploadToastId = `upload-${Date.now()}`; // Unique ID for the toast
 
     toast({
-      id: uploadToastId,
       title: "Uploading images...",
       description: `Processing ${files.length} image(s).`,
     });
@@ -506,7 +505,6 @@ export default function InventoryPage() {
       }));
 
       toast({ // Update the initial toast to success
-        id: uploadToastId,
         title: "Upload Complete",
         description: `${files.length} image(s) successfully uploaded.`,
       });
@@ -514,7 +512,6 @@ export default function InventoryPage() {
     } catch (err: any) {
       console.error('Image upload error:', err);
       toast({ // Update the initial toast to failure
-        id: uploadToastId,
         title: "Upload Failed",
         description: err.message || "An error occurred during upload.",
         variant: "destructive"
