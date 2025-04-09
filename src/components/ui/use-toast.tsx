@@ -1,9 +1,9 @@
-import { toast as sonnerToast, Toaster as SonnerToaster, ToastProps as SonnerToastProps } from 'sonner';
+import { toast as sonnerToast, Toaster as SonnerToaster, ToasterProps } from 'sonner';
 
 // Define your standard toast types
 type ToastProps = {
-  title: string;
-  description?: string;
+  title: string | React.ReactNode;
+  description?: string | React.ReactNode;
   duration?: number;
   variant?: 'default' | 'destructive';
   action?: React.ReactNode;
@@ -18,7 +18,7 @@ export function toast({ title, description, duration = 3000, variant = 'default'
     description,
     duration,
     action,
-    style: variant === 'destructive' 
+    style: variant === 'destructive'
       ? { backgroundColor: '#FEE2E2', borderColor: '#F87171', color: '#B91C1C' }
       : undefined
   });
