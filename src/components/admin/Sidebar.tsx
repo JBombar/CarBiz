@@ -13,8 +13,6 @@ import {
   Settings,
   User,
   CalendarClock,
-  HandshakeIcon,
-  UsersIcon,
   Tag,
   LogOut,
   ExternalLink,
@@ -23,32 +21,17 @@ import {
 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import { Button } from "@/components/ui/button";
-import { useState, useEffect } from "react";
+import { useSidebar } from "@/context/SidebarContext";
 
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
-  const [collapsed, setCollapsed] = useState(false);
+  const { collapsed, toggleSidebar } = useSidebar();
 
   const isActive = (path: string) => {
     return pathname === path || pathname.startsWith(`${path}/`);
   };
-
-  // Toggle sidebar collapse state
-  const toggleSidebar = () => {
-    setCollapsed(!collapsed);
-    // Store preference in localStorage
-    localStorage.setItem('sidebarCollapsed', String(!collapsed));
-  };
-
-  // Load saved preference on component mount
-  useEffect(() => {
-    const savedState = localStorage.getItem('sidebarCollapsed');
-    if (savedState !== null) {
-      setCollapsed(savedState === 'true');
-    }
-  }, []);
 
   const navItems = [
     { name: "Dashboard", href: "/admin", icon: LayoutGrid },
@@ -124,8 +107,8 @@ export default function Sidebar() {
                 <Link
                   href={item.href}
                   className={`flex items-center ${collapsed ? "justify-center" : "gap-3"} px-3 py-2 rounded-md text-sm ${isActive(item.href)
-                      ? "bg-gray-100 font-medium"
-                      : "text-gray-700 hover:bg-gray-50"
+                    ? "bg-gray-100 font-medium"
+                    : "text-gray-700 hover:bg-gray-50"
                     }`}
                   title={collapsed ? item.name : ""}
                 >
