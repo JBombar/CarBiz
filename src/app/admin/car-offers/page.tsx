@@ -33,6 +33,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 // Define TypeScript interface for car offer data
 interface CarOffer {
@@ -65,6 +75,8 @@ export default function AdminCarsPage() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxImageIndex, setLightboxImageIndex] = useState(0);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [offerToDelete, setOfferToDelete] = useState<string | null>(null);
   const supabase = createClient();
   const { toast } = useToast();
 
@@ -183,6 +195,39 @@ export default function AdminCarsPage() {
     }
   };
 
+  // Delete car offer
+  const deleteCarOffer = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from("car_offers")
+        .delete()
+        .eq("id", id);
+
+      if (error) throw error;
+
+      // Update local state to remove the deleted offer
+      setCarOffers((prev) => prev.filter((offer) => offer.id !== id));
+      setFilteredCarOffers((prev) => prev.filter((offer) => offer.id !== id));
+
+      toast({
+        title: "Offer deleted",
+        description: "The car offer has been permanently deleted",
+      });
+
+      // Close the modal if the deleted offer was being viewed
+      if (selectedOffer && selectedOffer.id === id) {
+        closeOfferDetails();
+      }
+    } catch (error) {
+      console.error("Error deleting car offer:", error);
+      toast({
+        title: "Delete failed",
+        description: "Could not delete the car offer. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
   // Format currency
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-US", {
@@ -276,6 +321,20 @@ export default function AdminCarsPage() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [lightboxOpen, selectedOffer]);
+
+  // Handle delete confirmation
+  const confirmDelete = (id: string) => {
+    setOfferToDelete(id);
+    setDeleteConfirmOpen(true);
+  };
+
+  const handleDeleteConfirmed = () => {
+    if (offerToDelete) {
+      deleteCarOffer(offerToDelete);
+    }
+    setDeleteConfirmOpen(false);
+    setOfferToDelete(null);
+  };
 
   return (
     <div className="container mx-auto p-6">
@@ -592,6 +651,12 @@ export default function AdminCarsPage() {
                     Close
                   </Button>
                   <Button
+                    variant="destructive"
+                    onClick={() => confirmDelete(selectedOffer.id)}
+                  >
+                    Delete
+                  </Button>
+                  <Button
                     variant="default"
                     onClick={() => {
                       toggleContactedStatus(selectedOffer.id, selectedOffer.contacted);
@@ -670,6 +735,28 @@ export default function AdminCarsPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Alert Dialog for Delete Confirmation */}
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the car offer
+              and remove the data from our servers.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConfirmed}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 } 

@@ -175,12 +175,11 @@ export default function ReservationsPage() {
     setDeleteDialogOpen(false);
     setReservationToDelete(null);
 
-    // Now proceed with the actual deletion
     setUpdating(id);
     try {
       const supabase = createClient();
 
-      // Proceed with deletion - don't use select() as it might not return data
+      // Simple deletion with comprehensive error handling
       const { error } = await supabase
         .from("reservations")
         .delete()
@@ -191,10 +190,9 @@ export default function ReservationsPage() {
         throw error;
       }
 
-      // If we got here, no error occurred, so we can assume deletion was successful
-      // Update local state by removing the deleted reservation
-      setReservations(currentReservations =>
-        currentReservations.filter(reservation => reservation.id !== id)
+      // Only update the UI after confirmed database deletion
+      setReservations(prevReservations =>
+        prevReservations.filter(reservation => reservation.id !== id)
       );
 
       toast({

@@ -16,8 +16,34 @@ export async function MostSearchedCars() {
 
     if (supabaseError) throw supabaseError;
 
+    // Pre-filter to get potentially valid cars
+    let potentialCars = [];
     if (data && Array.isArray(data)) {
-      cars = data;
+      potentialCars = data.filter(car =>
+        car &&
+        car.id &&
+        car.make &&
+        car.model &&
+        car.year
+      );
+    }
+
+    // Now verify each car actually exists in the inventory
+    if (potentialCars.length > 0) {
+      // Extract all car IDs
+      const carIds = potentialCars.map(car => car.id);
+
+      // Check which IDs actually exist in the cars table
+      const { data: existingCars } = await supabase
+        .from('cars')  // Assuming 'cars' is your main inventory table
+        .select('id')
+        .in('id', carIds);
+
+      // Create a set of valid IDs for fast lookup
+      const validIds = new Set(existingCars?.map(car => car.id) || []);
+
+      // Only keep cars that exist in the main inventory
+      cars = potentialCars.filter(car => validIds.has(car.id));
     }
   } catch (e) {
     console.error('Error fetching most viewed cars:', e);

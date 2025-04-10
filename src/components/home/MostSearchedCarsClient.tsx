@@ -211,12 +211,24 @@ type MostSearchedCarsClientProps = {
     cars: Car[];
 };
 
+// Helper function to validate car data (more comprehensive checks)
+function isValidCar(car: Car | null | undefined): boolean {
+    if (!car) return false;
+    if (!isValidUuid(car.id)) return false;
+
+    // Check for essential properties
+    if (!car.make || !car.model || !car.year) return false;
+
+    return true;
+}
+
 export function MostSearchedCarsClient({ cars }: MostSearchedCarsClientProps) {
     const [currentIndex, setCurrentIndex] = useState(0);
     const [isAnimating, setIsAnimating] = useState(false);
 
-    // Ensure cars is always an array, even if data is missing
-    const safeCars = Array.isArray(cars) ? cars : [];
+    // Filter out any invalid cars first
+    const validCars = Array.isArray(cars) ? cars.filter(isValidCar) : [];
+    const safeCars = validCars; // Use the filtered array
 
     const visibleCars = 4; // Number of cars visible at once on desktop
     const maxIndex = Math.max(0, safeCars.length - visibleCars);

@@ -67,7 +67,7 @@ export default function Sidebar() {
             <User className="h-5 w-5 text-gray-600" />
           </div>
           <div className="flex flex-col">
-            <span className="text-sm font-medium">jbombar.ai@gmail.com</span>
+            <span className="text-sm font-medium"></span>
             <span className="text-xs text-gray-500">Admin</span>
           </div>
         </div>
