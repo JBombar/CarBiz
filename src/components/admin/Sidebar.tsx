@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { usePathname } from "next/navigation";
 import {
   Car,
@@ -13,11 +14,18 @@ import {
   User,
   CalendarClock,
   HandshakeIcon,
-  UsersIcon
+  UsersIcon,
+  Tag,
+  LogOut,
+  ExternalLink
 } from "lucide-react";
+import { createClient } from "@/utils/supabase/client";
+import { Button } from "@/components/ui/button";
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const supabase = createClient();
 
   const isActive = (path: string) => {
     return pathname === path || pathname.startsWith(`${path}/`);
@@ -26,6 +34,7 @@ export default function Sidebar() {
   const navItems = [
     { name: "Dashboard", href: "/admin", icon: LayoutGrid },
     { name: "Inventory", href: "/admin/inventory", icon: Car },
+    { name: "Car Offers", href: "/admin/car-offers", icon: Tag },
     { name: "Partners", href: "/admin/partners", icon: Users },
     { name: "Leads", href: "/admin/leads", icon: Users },
     { name: "Reservations", href: "/admin/reservations", icon: Calendar },
@@ -34,6 +43,14 @@ export default function Sidebar() {
     { name: "Analytics", href: "/admin/analytics", icon: BarChart },
     { name: "Settings", href: "/admin/settings", icon: Settings },
   ];
+
+  // Handle logout function
+  const handleLogout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (!error) {
+      router.push("/login");
+    }
+  };
 
   return (
     <aside className="fixed left-0 top-0 h-screen w-60 bg-white border-r border-gray-200 flex flex-col z-40">
@@ -78,6 +95,31 @@ export default function Sidebar() {
           })}
         </ul>
       </nav>
+
+      {/* Bottom action buttons - NEW SECTION */}
+      <div className="border-t border-gray-200 p-4 mt-auto">
+        <div className="space-y-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full justify-start text-gray-700"
+            onClick={() => router.push("/")}
+          >
+            <ExternalLink className="mr-2 h-4 w-4" />
+            Back to Website
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start text-gray-700 hover:text-red-600 hover:bg-red-50"
+            onClick={handleLogout}
+          >
+            <LogOut className="mr-2 h-4 w-4" />
+            Log out
+          </Button>
+        </div>
+      </div>
     </aside>
   );
 } 

@@ -402,51 +402,62 @@ export function CarSellForm() {
               // Upload each file to storage
               for (let i = 0; i < selectedFiles.length; i++) {
                 const file = selectedFiles[i];
-                const fileExt = file.name.split('.').pop();
+                // More robust file extension extraction
+                const fileExt = file.name.split('.').pop() || 'jpg';
                 const fileName = `${offerId}/${Date.now()}-${i}.${fileExt}`;
-                const filePath = `${fileName}`;
+                const filePath = fileName; // No need for template literal with single variable
 
-                // Upload to vehicle-images bucket
-                const { data: uploadData, error: uploadError } = await supabase.storage
-                  .from('vehicle-images')
-                  .upload(filePath, file, {
-                    cacheControl: '3600',
-                    upsert: false
-                  });
+                try {
+                  // Upload to vehicle-images bucket
+                  const { data: uploadData, error: uploadError } = await supabase.storage
+                    .from('vehicle-images')
+                    .upload(filePath, file, {
+                      cacheControl: '3600',
+                      upsert: true // Changed to true to allow overwriting
+                    });
 
-                if (uploadError) {
-                  console.error(`Error uploading file ${i}:`, uploadError);
-                  continue; // Skip this file but continue with others
-                }
+                  if (uploadError) {
+                    console.error(`Error uploading file ${i}:`, uploadError);
+                    continue; // Skip this file but continue with others
+                  }
 
-                // Get public URL
-                const { data: publicUrlData } = supabase.storage
-                  .from('vehicle-images')
-                  .getPublicUrl(filePath);
+                  // Get public URL
+                  const { data: publicUrlData } = supabase.storage
+                    .from('vehicle-images')
+                    .getPublicUrl(filePath);
 
-                if (publicUrlData?.publicUrl) {
-                  uploadedPhotoUrls.push(publicUrlData.publicUrl);
-                  console.log(`File ${i} uploaded successfully:`, publicUrlData.publicUrl);
+                  if (publicUrlData?.publicUrl) {
+                    uploadedPhotoUrls.push(publicUrlData.publicUrl);
+                    console.log(`File ${i} uploaded successfully:`, publicUrlData.publicUrl);
+                  } else {
+                    console.error(`Failed to get public URL for file ${i}`);
+                  }
+                } catch (uploadException) {
+                  console.error(`Exception during file ${i} upload:`, uploadException);
                 }
               }
 
               // If we have uploaded photos, update the car_offer record
               if (uploadedPhotoUrls.length > 0) {
-                // Join URLs as JSON string
-                const photoUrlsString = JSON.stringify(uploadedPhotoUrls);
+                try {
+                  // Store as array directly, not as JSON string
+                  const { error: updateError } = await supabase
+                    .from('car_offers')
+                    .update({ photo_urls: uploadedPhotoUrls })
+                    .eq('id', offerId);
 
-                // Update the record with photo URLs
-                const { error: updateError } = await supabase
-                  .from('car_offers')
-                  .update({ photo_urls: photoUrlsString })
-                  .eq('id', offerId);
-
-                if (updateError) {
-                  console.error("Error updating record with photo URLs:", updateError);
-                  // We'll still consider the submission successful even if photo update fails
-                } else {
-                  console.log("Successfully updated car offer with photo URLs");
+                  if (updateError) {
+                    console.error("Error updating record with photo URLs:", updateError);
+                    setSubmitError(`Photos uploaded but couldn't save URLs: ${updateError.message}`);
+                  } else {
+                    console.log("Successfully updated car offer with photo URLs:", uploadedPhotoUrls);
+                  }
+                } catch (updateException) {
+                  console.error("Exception during photo URL update:", updateException);
+                  setSubmitError("Photos uploaded but encountered an error saving URLs");
                 }
+              } else {
+                console.warn("No photos were successfully uploaded");
               }
             }
           }
