@@ -227,10 +227,10 @@ const RadioGroupItem = React.forwardRef<
         className
       )}
       {...props}
-      // Remove 'checked' prop - let the parent RadioGroup/Form state control it via its 'value' prop
-      // checked={...}
-      // No 'onChange' needed here if handled by parent RadioGroup 'onValueChange'
-      // onChange={...}
+    // Remove 'checked' prop - let the parent RadioGroup/Form state control it via its 'value' prop
+    // checked={...}
+    // No 'onChange' needed here if handled by parent RadioGroup 'onValueChange'
+    // onChange={...}
     />
   );
 });
@@ -240,21 +240,21 @@ RadioGroupItem.displayName = "RadioGroupItem";
 // Near the top of the file, add this utility function
 function useHasMounted() {
   const [hasMounted, setHasMounted] = useState(false);
-  
+
   useEffect(() => {
     setHasMounted(true);
   }, []);
-  
+
   return hasMounted;
 }
 
 export function CarSellForm() {
   // Use our hasMounted hook to track client-side rendering
   const hasMounted = useHasMounted();
-  
+
   // Keep the existing state for Supabase, but initialize differently
   const supabaseRef = React.useRef<any>(null);
-  
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -265,22 +265,22 @@ export function CarSellForm() {
   const form = useFormMock();
 
   // Initialize Supabase on the client side only
- // Initialize Supabase on the client side only
- useEffect(() => {
-  if (typeof window !== 'undefined') {
-    try {
-      // Dynamic import to ensure this only happens on client
-      const { createClient } = require('@/utils/supabase/client');
-      supabaseRef.current = createClient();
-      console.log("Supabase client initialized successfully");
-    } catch (error) {
-      console.error("Failed to initialize Supabase client:", error);
+  // Initialize Supabase on the client side only
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        // Dynamic import to ensure this only happens on client
+        const { createClient } = require('@/utils/supabase/client');
+        supabaseRef.current = createClient();
+        console.log("Supabase client initialized successfully");
+      } catch (error) {
+        console.error("Failed to initialize Supabase client:", error);
+      }
     }
-  }
-}, []);
-  
+  }, []);
 
-  
+
+
   // Handle file selection
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -295,7 +295,7 @@ export function CarSellForm() {
       console.log("Component not mounted yet, aborting submission");
       return;
     }
-    
+
     setIsSubmitting(true);
     setErrors({});
     setSubmitError(null);
@@ -327,102 +327,148 @@ export function CarSellForm() {
         setIsSubmitting(false);
         return; // Stop submission if errors exist
       }
-      
+
       // Add this debug check for environment variables
       console.log("Checking Supabase environment variables:");
       console.log("NEXT_PUBLIC_SUPABASE_URL exists:", !!process.env.NEXT_PUBLIC_SUPABASE_URL);
       console.log("NEXT_PUBLIC_SUPABASE_ANON_KEY exists:", !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
-      
+
       // Create Supabase client with better error handling
       console.log("Creating Supabase client...");
       try {
         const { createClient } = await import('@/utils/supabase/client');
         const supabase = createClient();
         console.log("Supabase client created successfully");
-        
+
         // Test the connection with a simple query
         const { data: testData, error: testError } = await supabase
-          .from('leads')
-          .select('count(*)')
+          .from('car_offers')
+          .select('id')
           .limit(1);
-          
+
         console.log("Supabase connection test:", { testData, testError });
-        
+
         if (testError) {
           throw new Error(`Connection test failed: ${testError.message}`);
         }
-        
-        // Prepare data with explicit type conversions to match Supabase schema
-        const leadData = {
+
+        // First insert the car offer data without photos
+        const carOfferData = {
           // Text fields - explicitly cast as strings
           full_name: String(data.fullName).trim(),
           email: String(data.email).trim(),
           phone: String(data.phone).trim(),
           make: String(data.make).trim(),
           model: String(data.model).trim(),
-          // These fields might look like numbers but should be strings in DB
           year: String(data.year).trim(),
-          mileage: String(data.mileage).trim(),
-          // More string fields
+          mileage: Number(data.mileage.trim()),
           fuel_type: String(data.fuelType),
           transmission: String(data.transmission),
           condition: String(data.condition),
           city: String(data.city).trim(),
-          // Numeric field with improved null handling
-          asking_price: data.askingPrice && data.askingPrice.trim() !== '' 
-            ? Number(data.askingPrice) 
+          asking_price: data.askingPrice && data.askingPrice.trim() !== ''
+            ? Number(data.askingPrice)
             : null,
-          // Optional text field
-          description: data.description ? String(data.description).trim() : null,
+          notes: data.description ? String(data.description).trim() : null,
+          contacted: false,
         };
-        
-        console.log("Sending lead data to Supabase with explicit types:", leadData);
-        
-        // Add more explicit error handling around the insert operation
+
+        console.log("Sending car offer data to Supabase:", carOfferData);
+
+        // Insert car offer
         try {
           const { data: insertedData, error } = await supabase
-            .from('leads')
-            .insert([leadData])
-            .select(); // Keep select() to see if we get data back
-          
-          console.log("Supabase insert complete - Response data:", insertedData);
-          
+            .from('car_offers')
+            .insert([carOfferData])
+            .select();
+
           if (error) {
-            console.error("Supabase insert ERROR:", error);
-            console.error("Error details:", {
-              code: error.code,
-              message: error.message,
-              details: error.details,
-              hint: error.hint
-            });
+            console.error("Insert ERROR:", error);
             throw new Error(`Insert failed: ${error.message}`);
           }
-          
+
           if (!insertedData || insertedData.length === 0) {
             console.warn("Warning: Insert succeeded but no data returned");
-            // Continue with success path anyway
           } else {
-            console.log("Success! New lead ID:", insertedData[0]?.id);
+            console.log("Success! New car offer ID:", insertedData[0]?.id);
+
+            // Handle photo uploads if any files were selected
+            if (selectedFiles.length > 0) {
+              const offerId = insertedData[0].id;
+              const uploadedPhotoUrls: string[] = [];
+
+              console.log(`Uploading ${selectedFiles.length} photos for offer ${offerId}`);
+
+              // Upload each file to storage
+              for (let i = 0; i < selectedFiles.length; i++) {
+                const file = selectedFiles[i];
+                const fileExt = file.name.split('.').pop();
+                const fileName = `${offerId}/${Date.now()}-${i}.${fileExt}`;
+                const filePath = `${fileName}`;
+
+                // Upload to vehicle-images bucket
+                const { data: uploadData, error: uploadError } = await supabase.storage
+                  .from('vehicle-images')
+                  .upload(filePath, file, {
+                    cacheControl: '3600',
+                    upsert: false
+                  });
+
+                if (uploadError) {
+                  console.error(`Error uploading file ${i}:`, uploadError);
+                  continue; // Skip this file but continue with others
+                }
+
+                // Get public URL
+                const { data: publicUrlData } = supabase.storage
+                  .from('vehicle-images')
+                  .getPublicUrl(filePath);
+
+                if (publicUrlData?.publicUrl) {
+                  uploadedPhotoUrls.push(publicUrlData.publicUrl);
+                  console.log(`File ${i} uploaded successfully:`, publicUrlData.publicUrl);
+                }
+              }
+
+              // If we have uploaded photos, update the car_offer record
+              if (uploadedPhotoUrls.length > 0) {
+                // Join URLs as JSON string
+                const photoUrlsString = JSON.stringify(uploadedPhotoUrls);
+
+                // Update the record with photo URLs
+                const { error: updateError } = await supabase
+                  .from('car_offers')
+                  .update({ photo_urls: photoUrlsString })
+                  .eq('id', offerId);
+
+                if (updateError) {
+                  console.error("Error updating record with photo URLs:", updateError);
+                  // We'll still consider the submission successful even if photo update fails
+                } else {
+                  console.log("Successfully updated car offer with photo URLs");
+                }
+              }
+            }
           }
-          
-          // Rest of success handling remains the same
+
+          // Success handling
           setIsSuccess(true);
           form.reset();
           setSelectedFiles([]);
-          
+
         } catch (insertError) {
           console.error("Error during insert operation:", insertError);
-          throw insertError; // Re-throw to be caught by outer try/catch
+          throw insertError;
         }
       } catch (supabaseError) {
         console.error("Supabase client error:", supabaseError);
         throw supabaseError;
       }
-      
+
     } catch (error) {
       console.error("Form submission error:", error);
-      setSubmitError(error instanceof Error 
-        ? `Error: ${error.message}` 
+      setSubmitError(error instanceof Error
+        ? `Error: ${error.message}`
         : "An error occurred while submitting your information. Please try again.");
       setIsSuccess(false);
     } finally {
@@ -517,7 +563,7 @@ export function CarSellForm() {
                         {...field}
                       />
                     </FormControl>
-                     <FormMessage>{errors.email}</FormMessage>
+                    <FormMessage>{errors.email}</FormMessage>
                   </FormItem>
                 )}
               />
@@ -654,11 +700,11 @@ export function CarSellForm() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Transmission</FormLabel>
-                       <Select
+                      <Select
                         value={field.value}
                         onValueChange={field.onChange}
                       >
-                         <FormControl>
+                        <FormControl>
                           <SelectTrigger>
                             <SelectValue placeholder="Select transmission" />
                           </SelectTrigger>
@@ -693,7 +739,7 @@ export function CarSellForm() {
                             <RadioGroupItem value="new" id="condition-new" />
                           </FormControl>
                           <FormLabel htmlFor="condition-new" className="font-normal"> {/* Use FormLabel */}
-                             New
+                            New
                           </FormLabel>
                         </FormItem>
                         <FormItem className="flex items-center space-x-2 space-y-0">
@@ -720,7 +766,7 @@ export function CarSellForm() {
                     <FormControl>
                       <Input
                         placeholder="e.g., San Francisco"
-                         {...field}
+                        {...field}
                       />
                     </FormControl>
                     <FormMessage>{errors.city}</FormMessage>
@@ -745,15 +791,15 @@ export function CarSellForm() {
                         type="number"
                         placeholder="e.g., 25000"
                         {...field}
-                         // Allow empty string, convert to number on submit/validate
-                         onChange={(e) => field.onChange(e.target.value)}
-                         value={field.value || ''} // Ensure value is not null/undefined for input
+                        // Allow empty string, convert to number on submit/validate
+                        onChange={(e) => field.onChange(e.target.value)}
+                        value={field.value || ''} // Ensure value is not null/undefined for input
                       />
                     </FormControl>
                     <FormDescription>
                       Leave blank if you'd like us to provide a market valuation.
                     </FormDescription>
-                     <FormMessage>{errors.askingPrice}</FormMessage>
+                    <FormMessage>{errors.askingPrice}</FormMessage>
                   </FormItem>
                 )}
               />
@@ -762,7 +808,7 @@ export function CarSellForm() {
                 <Label htmlFor="file-upload">Upload Photos</Label> {/* Changed Label for consistency */}
                 <div className="mt-1 flex justify-center rounded-md border-2 border-dashed border-border px-6 pb-6 pt-5">
                   <div className="space-y-1 text-center">
-                     <svg /* Your upload icon SVG */ >...</svg> {/* Keep your SVG */}
+                    <svg /* Your upload icon SVG */ >...</svg> {/* Keep your SVG */}
                     <div className="flex text-sm text-muted-foreground">
                       <Label
                         htmlFor="file-upload"
@@ -799,7 +845,7 @@ export function CarSellForm() {
                         >
                           {file.name}
                           {/* Optional: Add a remove button */}
-                           {/* <button type="button" onClick={() => handleRemoveFile(index)} className="ml-2 text-destructive">x</button> */}
+                          {/* <button type="button" onClick={() => handleRemoveFile(index)} className="ml-2 text-destructive">x</button> */}
                         </div>
                       ))}
                     </div>
@@ -811,7 +857,7 @@ export function CarSellForm() {
 
           {/* Additional Info Section */}
           <div>
-             <h3 className="text-lg font-medium mb-4 border-b pb-2">Additional Information</h3>
+            <h3 className="text-lg font-medium mb-4 border-b pb-2">Additional Information</h3>
             <FormField
               control={form.control}
               name="description"
@@ -822,7 +868,7 @@ export function CarSellForm() {
                     <Textarea
                       placeholder="Please provide any additional details about your car..."
                       className="min-h-[120px]"
-                       {...field}
+                      {...field}
                     />
                   </FormControl>
                   <FormMessage>{errors.description}</FormMessage>

@@ -63,13 +63,13 @@ export function RequestCarForm() {
     e.preventDefault();
     setIsSubmitting(true);
     setSubmitError(null);
-    
+
     try {
       console.log('Preparing to submit form data to Supabase');
-      
+
       // Initialize Supabase client
       const supabase = createClient();
-      
+
       // Construct the data object to match leads table schema
       const leadData = {
         full_name: formData.fullName.trim(),
@@ -88,25 +88,25 @@ export function RequestCarForm() {
         year_to: formData.yearTo,
         notes: formData.notes.trim()
       };
-      
+
       console.log('Submitting lead data to Supabase:', leadData);
-      
+
       // Insert data into the leads table
       const { data: insertedData, error } = await supabase
         .from('leads')
         .insert([leadData])
         .select();
-      
+
       if (error) {
         console.error('Supabase insert error:', error);
         throw new Error(`Failed to save your request: ${error.message}`);
       }
-      
+
       console.log('Lead successfully submitted:', insertedData);
-      
+
       // Show success state
       setSubmitSuccess(true);
-      
+
       // Reset form after successful submission
       setFormData({
         fullName: "",
@@ -125,11 +125,11 @@ export function RequestCarForm() {
         location: "",
         notes: ""
       });
-      
+
     } catch (error) {
       console.error('Form submission error:', error);
-      setSubmitError(error instanceof Error 
-        ? error.message 
+      setSubmitError(error instanceof Error
+        ? error.message
         : 'An error occurred while submitting your request. Please try again.');
     } finally {
       setIsSubmitting(false);
@@ -190,50 +190,50 @@ export function RequestCarForm() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <Label htmlFor="fullName">Full Name<span className="text-red-500">*</span></Label>
-                    <Input 
-                      id="fullName" 
+                    <Input
+                      id="fullName"
                       name="fullName"
                       value={formData.fullName}
                       onChange={handleChange}
-                      placeholder="John Doe" 
-                      required 
+                      placeholder="John Doe"
+                      required
                     />
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label htmlFor="email">Email Address<span className="text-red-500">*</span></Label>
-                    <Input 
-                      id="email" 
+                    <Input
+                      id="email"
                       name="email"
                       value={formData.email}
                       onChange={handleChange}
-                      type="email" 
-                      placeholder="john@example.com" 
-                      required 
+                      type="email"
+                      placeholder="john@example.com"
+                      required
                     />
                   </div>
                 </div>
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <Label htmlFor="phone">Phone Number</Label>
-                    <Input 
-                      id="phone" 
+                    <Input
+                      id="phone"
                       name="phone"
                       value={formData.phone}
                       onChange={handleChange}
-                      placeholder="(123) 456-7890" 
+                      placeholder="(123) 456-7890"
                     />
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label htmlFor="location">Location / Region</Label>
-                    <Input 
-                      id="location" 
+                    <Input
+                      id="location"
                       name="location"
                       value={formData.location}
                       onChange={handleChange}
-                      placeholder="City, State or Zip Code" 
+                      placeholder="City, State or Zip Code"
                     />
                   </div>
                 </div>
@@ -245,23 +245,23 @@ export function RequestCarForm() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <Label htmlFor="make">Desired Car Make</Label>
-                    <Input 
-                      id="make" 
+                    <Input
+                      id="make"
                       name="make"
                       value={formData.make}
                       onChange={handleChange}
-                      placeholder="BMW, Toyota, etc." 
+                      placeholder="BMW, Toyota, etc."
                     />
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label htmlFor="model">Desired Car Model</Label>
-                    <Input 
-                      id="model" 
+                    <Input
+                      id="model"
                       name="model"
                       value={formData.model}
                       onChange={handleChange}
-                      placeholder="X5, Camry, etc." 
+                      placeholder="X5, Camry, etc."
                     />
                   </div>
                 </div>
@@ -269,7 +269,7 @@ export function RequestCarForm() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <Label htmlFor="yearFrom">Year Range (From)</Label>
-                    <Select 
+                    <Select
                       onValueChange={(value) => handleSelectChange("yearFrom", value)}
                       value={formData.yearFrom}
                     >
@@ -285,7 +285,7 @@ export function RequestCarForm() {
                       </SelectContent>
                     </Select>
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label htmlFor="yearTo">Year Range (To)</Label>
                     <Select
@@ -305,27 +305,27 @@ export function RequestCarForm() {
                     </Select>
                   </div>
                 </div>
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <Label htmlFor="budget">Preferred Budget</Label>
-                    <Input 
-                      id="budget" 
+                    <Input
+                      id="budget"
                       name="budget"
                       value={formData.budget}
                       onChange={handleChange}
-                      placeholder="$30,000" 
+                      placeholder="$30,000"
                     />
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label htmlFor="color">Preferred Color(s)</Label>
-                    <Input 
-                      id="color" 
+                    <Input
+                      id="color"
                       name="color"
                       value={formData.color}
                       onChange={handleChange}
-                      placeholder="Black, Silver, etc." 
+                      placeholder="Black, Silver, etc."
                     />
                   </div>
                 </div>
@@ -334,15 +334,15 @@ export function RequestCarForm() {
               {/* Specifications */}
               <div className="space-y-4 pt-4 border-t">
                 <h3 className="text-lg font-medium">Vehicle Specifications</h3>
-                
+
                 <div className="space-y-2">
                   <Label>Car Condition</Label>
                   <div className="flex space-x-6">
                     <div className="flex items-center space-x-2">
-                      <input 
-                        type="radio" 
-                        id="condition-new" 
-                        name="condition" 
+                      <input
+                        type="radio"
+                        id="condition-new"
+                        name="condition"
                         value="new"
                         checked={formData.condition === "new"}
                         onChange={handleRadioChange}
@@ -351,10 +351,10 @@ export function RequestCarForm() {
                       <Label htmlFor="condition-new" className="cursor-pointer">New</Label>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <input 
-                        type="radio" 
-                        id="condition-preowned" 
-                        name="condition" 
+                      <input
+                        type="radio"
+                        id="condition-preowned"
+                        name="condition"
                         value="preowned"
                         checked={formData.condition === "preowned"}
                         onChange={handleRadioChange}
@@ -363,10 +363,10 @@ export function RequestCarForm() {
                       <Label htmlFor="condition-preowned" className="cursor-pointer">Pre-Owned</Label>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <input 
-                        type="radio" 
-                        id="condition-either" 
-                        name="condition" 
+                      <input
+                        type="radio"
+                        id="condition-either"
+                        name="condition"
                         value="either"
                         checked={formData.condition === "either"}
                         onChange={handleRadioChange}
@@ -376,7 +376,7 @@ export function RequestCarForm() {
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <Label htmlFor="transmission">Transmission Type</Label>
@@ -394,7 +394,7 @@ export function RequestCarForm() {
                       </SelectContent>
                     </Select>
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label htmlFor="fuelType">Fuel Type</Label>
                     <Select
@@ -419,13 +419,13 @@ export function RequestCarForm() {
                 {(formData.condition === "preowned" || formData.condition === "either") && (
                   <div className="space-y-2">
                     <Label htmlFor="maxMileage">Maximum Mileage</Label>
-                    <Input 
-                      id="maxMileage" 
+                    <Input
+                      id="maxMileage"
                       name="maxMileage"
                       type="number"
                       value={formData.maxMileage}
                       onChange={handleChange}
-                      placeholder="50000" 
+                      placeholder="50000"
                     />
                   </div>
                 )}
@@ -434,7 +434,7 @@ export function RequestCarForm() {
               {/* Additional Information */}
               <div className="space-y-2 pt-4 border-t">
                 <Label htmlFor="notes">Additional Notes</Label>
-                <Textarea 
+                <Textarea
                   id="notes"
                   name="notes"
                   value={formData.notes}
@@ -452,9 +452,9 @@ export function RequestCarForm() {
               )}
 
               <div className="pt-4 flex justify-center">
-                <Button 
-                  type="submit" 
-                  className="w-full md:w-auto" 
+                <Button
+                  type="submit"
+                  className="w-full md:w-auto"
                   size="lg"
                   disabled={isSubmitting}
                 >
