@@ -222,20 +222,31 @@ type MostSearchedCarsClientProps = {
 // Helper function to validate car data (more comprehensive checks)
 function isValidCar(car: Car | null | undefined): boolean {
     if (!car) return false;
-    if (!isValidUuid(car.id)) return false;
 
-    // Check for essential properties
-    if (!car.make || !car.model || !car.year) return false;
+    // Log any rejected cars for debugging
+    const isValid = Boolean(car.id && car.make && car.model && car.year);
+    if (!isValid) {
+        console.log('Client rejected car:',
+            { id: car?.id, make: car?.make, model: car?.model, year: car?.year, status: car?.status });
+    }
 
-    return true;
+    return isValid;
 }
 
 export function MostSearchedCarsClient({ cars }: MostSearchedCarsClientProps) {
     const [currentIndex, setCurrentIndex] = useState(0);
     const [isAnimating, setIsAnimating] = useState(false);
 
-    // Filter out any invalid cars first
+    // Log cars received from server component
+    console.log('Cars received by client:',
+        cars?.map(car => ({ id: car.id, make: car.make, model: car.model, status: car.status })) || []);
+
+    // Filter out any invalid cars first - but with simpler validation
     const validCars = Array.isArray(cars) ? cars.filter(isValidCar) : [];
+
+    // Log after client filtering
+    console.log(`After client filtering: ${validCars.length} valid cars remaining`);
+
     const safeCars = validCars; // Use the filtered array
 
     const visibleCars = 4; // Number of cars visible at once on desktop

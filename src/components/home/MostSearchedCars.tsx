@@ -16,6 +16,10 @@ export async function MostSearchedCars() {
 
     if (supabaseError) throw supabaseError;
 
+    // Log raw data from RPC call for debugging
+    console.log('Raw data from get_most_viewed_cars:',
+      data?.map((car: any) => ({ id: car.id, make: car.make, model: car.model, status: car.status })));
+
     // Filter cars to keep only those with essential fields AND "available" status
     if (data && Array.isArray(data)) {
       cars = data.filter(car =>
@@ -28,8 +32,9 @@ export async function MostSearchedCars() {
         car.status.toLowerCase() === 'available'  // Only show available cars
       );
 
-      // Add console log for debugging
-      console.log(`Found ${cars.length} available cars from get_most_viewed_cars`);
+      // Add more detailed console log for debugging
+      console.log(`Found ${cars.length} available cars after server filtering. IDs:`,
+        cars.map(car => car.id));
     }
 
     // Remove the second verification step that checks existence in inventory
