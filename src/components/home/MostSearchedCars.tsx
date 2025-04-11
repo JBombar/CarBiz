@@ -16,35 +16,25 @@ export async function MostSearchedCars() {
 
     if (supabaseError) throw supabaseError;
 
-    // Pre-filter to get potentially valid cars
-    let potentialCars = [];
+    // Filter cars to keep only those with essential fields AND "available" status
     if (data && Array.isArray(data)) {
-      potentialCars = data.filter(car =>
+      cars = data.filter(car =>
         car &&
         car.id &&
         car.make &&
         car.model &&
-        car.year
+        car.year &&
+        car.status &&
+        car.status.toLowerCase() === 'available'  // Only show available cars
       );
+
+      // Add console log for debugging
+      console.log(`Found ${cars.length} available cars from get_most_viewed_cars`);
     }
 
-    // Now verify each car actually exists in the inventory
-    if (potentialCars.length > 0) {
-      // Extract all car IDs
-      const carIds = potentialCars.map(car => car.id);
+    // Remove the second verification step that checks existence in inventory
+    // as the RPC function should already return valid cars
 
-      // Check which IDs actually exist in the cars table
-      const { data: existingCars } = await supabase
-        .from('cars')  // Assuming 'cars' is your main inventory table
-        .select('id')
-        .in('id', carIds);
-
-      // Create a set of valid IDs for fast lookup
-      const validIds = new Set(existingCars?.map(car => car.id) || []);
-
-      // Only keep cars that exist in the main inventory
-      cars = potentialCars.filter(car => validIds.has(car.id));
-    }
   } catch (e) {
     console.error('Error fetching most viewed cars:', e);
     error = e instanceof Error ? e.message : 'Failed to load popular cars';

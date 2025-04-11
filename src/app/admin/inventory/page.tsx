@@ -72,6 +72,7 @@ type CarListing = {
   listing_views?: { count: number }[]; // Relation for view count
   is_special_offer?: boolean;
   special_offer_label?: string;
+  time_in_stock_days?: number | null;
 };
 
 // Define the initial state for the form data
@@ -146,10 +147,6 @@ export default function InventoryPage() {
   // Image Handling State
   const [activeImageIndex, setActiveImageIndex] = useState<Record<string, number>>({}); // For table row image slider
   const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null); // For modal gallery view
-
-  // Delete Confirmation State
-  const [showConfirmation, setShowConfirmation] = useState(false);
-  const [carToDelete, setCarToDelete] = useState<string | null>(null);
 
   // Fix 1: Add this to your state declarations section
   const [sellerSince, setSellerSince] = useState<string | null>(null);
@@ -605,60 +602,58 @@ export default function InventoryPage() {
     openModal('edit', car);
   };
 
-  const handleDeleteCar = (carId: string) => {
-    setCarToDelete(carId);
-    setShowConfirmation(true);
-  };
-
-  const confirmDelete = async () => {
-    if (!carToDelete) return;
-    try {
-      const { error } = await supabase
-        .from('car_listings')
-        .delete()
-        .eq('id', carToDelete);
-      if (error) throw error;
-
-      setInventory(prev => prev.filter(car => car.id !== carToDelete)); // Optimistic UI update
-      toast({ title: 'Success', description: 'Vehicle deleted successfully.' });
-
-    } catch (err: any) {
-      console.error('Error deleting vehicle:', err);
-      toast({ title: 'Error', description: err.message, variant: 'destructive' });
-      // Optionally refetch inventory if optimistic update might be wrong
-      // fetchInventory();
-    } finally {
-      setShowConfirmation(false);
-      setCarToDelete(null);
-      // Ensure modal is closed ONLY if the deleted car was being viewed/edited
-      if (currentCar?.id === carToDelete) {
-        closeModal();
-      }
-    }
-  };
-
   const handleToggleStatus = async (car: CarListing) => {
     const newStatus = car.status === 'available' ? 'sold' : 'available';
     const is_public = newStatus !== 'sold'; // Mark as not public when sold
 
     try {
+      // If marking as sold, calculate time in stock as days (integer)
+      let updateData: any = { status: newStatus, is_public: is_public };
+
+      // Only add time_in_stock_days when marking as sold
+      if (newStatus === 'sold') {
+        // Calculate days between created_at and now
+        const createdDate = new Date(car.created_at);
+        const today = new Date();
+        const timeDiffMs = today.getTime() - createdDate.getTime();
+        // Convert milliseconds to days and round to nearest integer
+        const daysDiff = Math.round(timeDiffMs / (1000 * 60 * 60 * 24));
+
+        // Add days as an integer value
+        updateData.time_in_stock_days = daysDiff;
+      }
+
       const { error } = await supabase
         .from('car_listings')
-        .update({ status: newStatus, is_public: is_public })
+        .update(updateData)
         .eq('id', car.id);
+
       if (error) throw error;
 
       // Update local state for immediate UI feedback
       setInventory(prev =>
         prev.map(item =>
-          item.id === car.id ? { ...item, status: newStatus, is_public: is_public } : item
+          item.id === car.id ? {
+            ...item,
+            status: newStatus,
+            is_public: is_public,
+            ...(newStatus === 'sold' ? { time_in_stock_days: updateData.time_in_stock_days } : {})
+          } : item
         )
       );
-      toast({ title: 'Status Updated', description: `Vehicle marked as ${newStatus}.` });
+
+      toast({
+        title: 'Status Updated',
+        description: `Vehicle marked as ${newStatus}.`
+      });
 
     } catch (err: any) {
       console.error('Failed to update status:', err);
-      toast({ title: 'Update Failed', description: err.message, variant: 'destructive' });
+      toast({
+        title: 'Update Failed',
+        description: err.message,
+        variant: 'destructive'
+      });
     }
   };
 
@@ -804,15 +799,14 @@ export default function InventoryPage() {
                         <div className="flex items-center space-x-2">
                           <Button variant="outline" size="sm" onClick={() => handleViewCar(car)} title="View Details"><EyeIcon className="h-4 w-4" /></Button>
                           <Button variant="outline" size="sm" onClick={() => handleEditCar(car)} title="Edit Vehicle"><PencilIcon className="h-4 w-4" /></Button>
-                          <Button variant="outline" size="sm"
+                          <Button
+                            variant="outline"
+                            size="sm"
                             onClick={() => handleToggleStatus(car)}
-                            title={car.status === 'available' ? 'Mark as Sold' : 'Mark as Available'}
                             className={car.status === 'available' ? 'text-orange-600 hover:bg-orange-50' : 'text-green-600 hover:bg-green-50'}
                           >
-                            {/* Icon changed to Check for clarity */}
-                            <CheckIcon className="h-4 w-4" />
+                            {car.status === 'available' ? 'Mark as Sold' : 'Mark as Unsold'}
                           </Button>
-                          <Button variant="destructive" size="sm" onClick={() => handleDeleteCar(car.id)} title="Delete Vehicle"><TrashIcon className="h-4 w-4" /></Button>
                         </div>
                       </td>
                     </tr>
@@ -1258,35 +1252,6 @@ export default function InventoryPage() {
           </div> {/* End Content Area */}
         </DialogContent>
       </Dialog>
-
-
-      {/* --- Confirmation Dialog --- */}
-      {showConfirmation && (
-        <Dialog open={showConfirmation} onOpenChange={setShowConfirmation}>
-          <DialogContent className="sm:max-w-[425px]">
-            {/* <DialogHeader> <DialogTitle>Confirm Deletion</DialogTitle> </DialogHeader> */}
-            <div className="p-4">
-              <div className="flex items-start space-x-3">
-                <div className="flex-shrink-0 flex items-center justify-center h-10 w-10 rounded-full bg-red-100 sm:h-8 sm:w-8">
-                  <ExclamationTriangleIcon className="h-5 w-5 text-red-600" aria-hidden="true" />
-                </div>
-                <div className="mt-0 text-left">
-                  <h3 className="text-lg font-medium text-gray-900">Delete Vehicle</h3>
-                  <p className="mt-2 text-sm text-gray-500">
-                    Are you sure you want to delete this vehicle listing? This action cannot be undone.
-                  </p>
-                </div>
-              </div>
-            </div>
-            {/* <DialogFooter> */}
-            <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-              <Button variant="destructive" onClick={confirmDelete} className="ml-3">Delete</Button>
-              <Button variant="outline" onClick={() => setShowConfirmation(false)}>Cancel</Button>
-            </div>
-            {/* </DialogFooter> */}
-          </DialogContent>
-        </Dialog>
-      )}
 
       {/* --- Enhanced Image Gallery Dialog --- */}
       <Dialog open={selectedImageIndex !== null} onOpenChange={(open) => !open && setSelectedImageIndex(null)}>

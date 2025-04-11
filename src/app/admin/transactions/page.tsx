@@ -32,7 +32,8 @@ import {
   Trash2,
   Download,
   BarChart4,
-  Percent
+  Percent,
+  Clock
 } from "lucide-react";
 import {
   AlertDialog,
@@ -74,6 +75,7 @@ interface BaseTransaction {
   updated_at: string;
   profit: number | null; // Added profit field
   margin: number | null; // Added margin field
+  time_in_stock_days: number | null; // Changed back to time_in_stock_days
 }
 
 // Type matching the raw Supabase query result using generics
@@ -346,6 +348,7 @@ export default function TransactionsPage() {
         'Seller',
         'Buyer',
         'Status',
+        'Days in Stock',
         'Completed Date',
         'Created Date'
       ];
@@ -360,6 +363,7 @@ export default function TransactionsPage() {
         t.seller_name,
         t.buyer_name || 'Not specified',
         t.status || 'Unknown',
+        t.time_in_stock_days !== null ? t.time_in_stock_days.toString() : 'N/A',
         t.completed_at ? formatDate(t.completed_at) : 'N/A',
         formatDate(t.created_at)
       ]);
@@ -463,6 +467,20 @@ export default function TransactionsPage() {
       default:
         return "outline";
     }
+  };
+
+  // Add a helper function to format days in stock
+  const formatDaysInStock = (days: number | null) => {
+    if (days === null) return 'N/A';
+    return `${days} ${days === 1 ? 'day' : 'days'}`;
+  };
+
+  // Add a function to get the appropriate color class for days in stock
+  const getDaysInStockColorClass = (days: number | null) => {
+    if (days === null) return 'bg-gray-100 text-gray-500';
+    if (days < 30) return 'bg-green-100 text-green-800'; // Fast sale - less than 30 days
+    if (days > 90) return 'bg-amber-100 text-amber-800'; // Long time - more than 90 days
+    return 'bg-blue-100 text-blue-800'; // Normal range
   };
 
   return (
@@ -665,6 +683,25 @@ export default function TransactionsPage() {
                     <TableHead>Seller</TableHead>
                     <TableHead>Buyer</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>
+                      <div className="flex items-center space-x-1">
+                        <span>Days in Stock</span>
+                        <Button
+                          variant="ghost"
+                          className="h-4 w-4 p-0"
+                          asChild
+                        >
+                          <div title="Number of days the vehicle was in inventory before being sold">
+                            <span className="sr-only">Information about days in stock</span>
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3 text-muted-foreground">
+                              <circle cx="12" cy="12" r="10" />
+                              <path d="M12 16v-4" />
+                              <path d="M12 8h.01" />
+                            </svg>
+                          </div>
+                        </Button>
+                      </div>
+                    </TableHead>
                     <TableHead>Completed</TableHead>
                     <TableHead>Created</TableHead>
                     <TableHead className="w-[80px]">Actions</TableHead>
@@ -697,6 +734,13 @@ export default function TransactionsPage() {
                           className="capitalize whitespace-nowrap"
                         >
                           {transaction.status || 'Unknown'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        <Badge
+                          className={getDaysInStockColorClass(transaction.time_in_stock_days)}
+                        >
+                          {formatDaysInStock(transaction.time_in_stock_days)}
                         </Badge>
                       </TableCell>
                       <TableCell className="whitespace-nowrap">{formatDate(transaction.completed_at)}</TableCell>
