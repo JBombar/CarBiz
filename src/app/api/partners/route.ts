@@ -14,6 +14,7 @@ const partnerSchema = z.object({
     company: z.string().optional(),
     is_active: z.boolean().default(true),
     status: z.enum(['active', 'inactive', 'pending']).default('pending'), // 🆕
+    trust_level: z.enum(['unrated', 'trusted', 'verified', 'flagged']).default('unrated'),
     notes: z.string().optional(),
 });
 

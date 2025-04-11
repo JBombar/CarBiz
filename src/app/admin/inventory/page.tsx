@@ -69,10 +69,11 @@ type CarListing = {
   seller_since?: string | null;
   is_public?: boolean;
   is_shared_with_network?: boolean;
-  listing_views?: { count: number }[]; // Relation for view count
+  shared_with_trust_levels?: string[] | null; // Add this new field
   is_special_offer?: boolean;
   special_offer_label?: string;
   time_in_stock_days?: number | null;
+  listing_views?: { count: number }[]; // Add this to fix the TypeScript error
 };
 
 // Define the initial state for the form data
@@ -107,6 +108,7 @@ const initialFormData = {
   purchasing_price: '',
   is_public: true,
   is_shared_with_network: false,
+  shared_with_trust_levels: [] as string[],
   is_special_offer: false,
   special_offer_label: '',
 };
@@ -573,6 +575,7 @@ export default function InventoryPage() {
         seller_since: car.seller_since || '',
         is_public: car.is_public ?? true,
         is_shared_with_network: car.is_shared_with_network ?? false,
+        shared_with_trust_levels: car.shared_with_trust_levels || [],
         is_special_offer: car.is_special_offer ?? false,
         special_offer_label: car.special_offer_label || '',
       });
@@ -759,13 +762,13 @@ export default function InventoryPage() {
               <thead className="bg-gray-50">
                 <tr>
                   {/* Make Headers Clickable for Sorting */}
-                  {['make', 'model', 'year', 'price', 'status', 'mileage', 'listing_type', 'listing_views', 'created_at'].map(field => (
+                  {['make', 'model', 'year', 'price', 'status', 'mileage', 'listing_type', 'shared_with', 'listing_views', 'created_at'].map(field => (
                     <th key={field}
                       scope="col"
                       className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                      onClick={() => handleSort(field as keyof CarListing | 'listing_views')}
+                      onClick={() => field !== 'shared_with' ? handleSort(field as keyof CarListing | 'listing_views') : null}
                     >
-                      {field.replace('_', ' ').replace('listing views', 'views')} {/* Basic formatting */}
+                      {field.replace('_', ' ').replace('listing views', 'views').replace('shared with', 'shared with')} {/* Basic formatting */}
                       {sortField === field && (sortDirection === 'asc' ? ' ▲' : ' ▼')}
                     </th>
                   ))}
@@ -792,6 +795,25 @@ export default function InventoryPage() {
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">{car.mileage.toLocaleString()} mi</td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600 capitalize">{car.listing_type}</td>
+                      <td className="px-4 py-3 whitespace-nowrap text-sm">
+                        {car.shared_with_trust_levels && car.shared_with_trust_levels.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {car.shared_with_trust_levels.map(level => (
+                              <span key={level} className={`px-2 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full capitalize
+                                ${level === 'trusted' ? 'bg-green-100 text-green-800' :
+                                  level === 'verified' ? 'bg-blue-100 text-blue-800' :
+                                    level === 'flagged' ? 'bg-red-100 text-red-800' :
+                                      'bg-gray-100 text-gray-800'}`}>
+                                {level}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="px-2 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
+                            Not Shared
+                          </span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-center text-gray-600">{car.listing_views?.[0]?.count ?? 0}</td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">{format(new Date(car.created_at), 'PP')}</td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm font-medium">
@@ -1145,63 +1167,118 @@ export default function InventoryPage() {
                       </div>
 
                       {/* Network Sharing Option */}
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="is_shared_with_network"
-                          checked={formData.is_shared_with_network}
-                          onCheckedChange={(checked) => {
-                            setFormData({
-                              ...formData,
-                              is_shared_with_network: checked === true
-                            });
-                          }}
-                        />
-                        <Label
-                          htmlFor="is_shared_with_network"
-                          className="text-sm font-medium leading-none cursor-pointer"
-                        >
-                          Share with partner network
-                        </Label>
-                      </div>
-
-                      {/* Special Offer Option - new addition */}
                       <div className="flex flex-col space-y-2">
                         <div className="flex items-center space-x-2">
                           <Checkbox
-                            id="is_special_offer"
-                            checked={formData.is_special_offer}
+                            id="is_shared_with_network"
+                            checked={formData.is_shared_with_network}
                             onCheckedChange={(checked) => {
                               setFormData({
                                 ...formData,
-                                is_special_offer: checked === true
+                                is_shared_with_network: checked === true,
+                                // Clear trust levels if network sharing is disabled
+                                shared_with_trust_levels: checked === true ? formData.shared_with_trust_levels : []
                               });
                             }}
                           />
                           <Label
-                            htmlFor="is_special_offer"
+                            htmlFor="is_shared_with_network"
                             className="text-sm font-medium leading-none cursor-pointer"
                           >
-                            Mark as Special Offer
+                            Share with partner network
                           </Label>
                         </div>
 
-                        {/* Special Offer Label - only visible when checkbox is checked */}
-                        {formData.is_special_offer && (
+                        {/* Trust Levels Selector - only visible when network sharing is enabled */}
+                        {formData.is_shared_with_network && (
                           <div className="ml-6 mt-2">
-                            <Label htmlFor="special_offer_label">Special Offer Label</Label>
-                            <Input
-                              id="special_offer_label"
-                              name="special_offer_label"
-                              value={formData.special_offer_label}
-                              onChange={handleFormChange}
-                              placeholder="e.g., Hot Deal, Price Drop, New Arrival"
-                              className={formErrors.special_offer_label ? 'border-red-500' : ''}
-                            />
-                            <p className="text-red-500 text-xs mt-1 h-4">{formErrors.special_offer_label}</p>
+                            <Label htmlFor="shared_with_trust_levels" className="text-sm font-medium mb-1 block">
+                              Share with trust levels
+                            </Label>
+                            <div className="space-y-2">
+                              {['trusted', 'verified', 'flagged', 'unrated'].map((level) => (
+                                <div key={level} className="flex items-center space-x-2">
+                                  <Checkbox
+                                    id={`trust-level-${level}`}
+                                    checked={formData.shared_with_trust_levels?.includes(level)}
+                                    onCheckedChange={(checked) => {
+                                      setFormData(prev => {
+                                        const currentLevels = [...(prev.shared_with_trust_levels || [])];
+
+                                        if (checked) {
+                                          // Add to array if not already included
+                                          if (!currentLevels.includes(level)) {
+                                            return {
+                                              ...prev,
+                                              shared_with_trust_levels: [...currentLevels, level]
+                                            };
+                                          }
+                                        } else {
+                                          // Remove from array if present
+                                          return {
+                                            ...prev,
+                                            shared_with_trust_levels: currentLevels.filter(l => l !== level)
+                                          };
+                                        }
+
+                                        return prev; // No change needed
+                                      });
+                                    }}
+                                  />
+                                  <Label
+                                    htmlFor={`trust-level-${level}`}
+                                    className="text-sm font-medium leading-none cursor-pointer capitalize"
+                                  >
+                                    {level}
+                                  </Label>
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         )}
                       </div>
                     </div>
+                  </div>
+                </section>
+
+                {/* Special Offer Option - new addition */}
+                <section>
+                  <h3 className="text-lg font-semibold text-gray-800 mb-4 border-b pb-2">Special Offer</h3>
+                  <div className="flex flex-col space-y-2">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="is_special_offer"
+                        checked={formData.is_special_offer}
+                        onCheckedChange={(checked) => {
+                          setFormData({
+                            ...formData,
+                            is_special_offer: checked === true
+                          });
+                        }}
+                      />
+                      <Label
+                        htmlFor="is_special_offer"
+                        className="text-sm font-medium leading-none cursor-pointer"
+                      >
+                        Mark as Special Offer
+                      </Label>
+                    </div>
+
+                    {/* Special Offer Label - only visible when checkbox is checked */}
+                    {formData.is_special_offer && (
+                      <div className="ml-6 mt-2">
+                        <Label htmlFor="special_offer_label">Special Offer Label</Label>
+                        <Input
+                          id="special_offer_label"
+                          name="special_offer_label"
+                          value={formData.special_offer_label}
+                          onChange={handleFormChange}
+                          placeholder="e.g., Hot Deal, Price Drop, New Arrival"
+                          className={formErrors.special_offer_label ? 'border-red-500' : ''}
+                        />
+                        <p className="text-red-500 text-xs mt-1 h-4">{formErrors.special_offer_label}</p>
+                      </div>
+                    )}
                   </div>
                 </section>
 

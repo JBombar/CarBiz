@@ -66,6 +66,7 @@ interface Partner {
     contact_phone: string | null;
     location: string | null;
     is_active: boolean | null;
+    trust_level: 'unrated' | 'trusted' | 'verified' | 'flagged';
 }
 
 // Partner form validation schema
@@ -79,6 +80,7 @@ const partnerSchema = z.object({
     is_active: z.boolean().default(true),
     notes: z.string().optional().or(z.literal("")),
     status: z.enum(["active", "inactive", "pending"]).default("pending"),
+    trust_level: z.enum(["unrated", "trusted", "verified", "flagged"]).default("unrated"),
 });
 
 export default function PartnersPage() {
@@ -103,6 +105,7 @@ export default function PartnersPage() {
         is_active: boolean;
         status: 'active' | 'inactive' | 'pending';
         notes: string;
+        trust_level: 'unrated' | 'trusted' | 'verified' | 'flagged';
     }>({
         name: '',
         contact_name: '',
@@ -113,6 +116,7 @@ export default function PartnersPage() {
         is_active: true,
         status: 'pending',
         notes: '',
+        trust_level: 'unrated',
     });
     const [formErrors, setFormErrors] = useState<Record<string, string>>({});
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -179,6 +183,7 @@ export default function PartnersPage() {
             is_active: true,
             notes: '',
             status: 'pending',
+            trust_level: 'unrated',
         });
         setFormErrors({});
         setFormType('create');
@@ -197,6 +202,7 @@ export default function PartnersPage() {
             is_active: partner.is_active ?? true,
             notes: partner.notes || '',
             status: partner.status,
+            trust_level: partner.trust_level || 'unrated',
         });
         setFormErrors({});
         setCurrentPartner(partner);
@@ -266,6 +272,53 @@ export default function PartnersPage() {
         }
     };
 
+    // Handle trust level select change
+    const handleTrustLevelChange = async (partnerId: string, newTrustLevel: 'unrated' | 'trusted' | 'verified' | 'flagged') => {
+        try {
+            const response = await fetch('/api/partners', {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    id: partnerId,
+                    trust_level: newTrustLevel
+                }),
+            });
+
+            if (!response.ok) {
+                const result = await response.json();
+                throw new Error(result.error || 'Failed to update trust level');
+            }
+
+            // Update local state to reflect the change
+            setPartners(partners.map(partner =>
+                partner.id === partnerId
+                    ? { ...partner, trust_level: newTrustLevel }
+                    : partner
+            ));
+
+            setFilteredPartners(filteredPartners.map(partner =>
+                partner.id === partnerId
+                    ? { ...partner, trust_level: newTrustLevel }
+                    : partner
+            ));
+
+            // Show success message
+            toast({
+                title: "Trust level updated",
+                description: "Partner trust level has been updated successfully.",
+            });
+        } catch (err) {
+            console.error('Failed to update trust level:', err);
+            toast({
+                title: "Error",
+                description: err instanceof Error ? err.message : "Failed to update trust level",
+                variant: "destructive",
+            });
+        }
+    };
+
     // Submit form to create or update a partner
     const handleSubmit = async () => {
         setIsSubmitting(true);
@@ -290,9 +343,11 @@ export default function PartnersPage() {
             // Prepare request options
             const url = '/api/partners';
             const method = formType === 'create' ? 'POST' : 'PUT';
-            const body = formType === 'create'
-                ? JSON.stringify(formData)
-                : JSON.stringify({ id: currentPartner?.id, ...formData });
+            const bodyData = formType === 'create'
+                ? formData
+                : { id: currentPartner?.id, ...formData };
+
+            console.log('Submitting partner data:', bodyData);
 
             // Send request
             const response = await fetch(url, {
@@ -300,7 +355,7 @@ export default function PartnersPage() {
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body,
+                body: JSON.stringify(bodyData),
             });
 
             const result = await response.json();
@@ -400,6 +455,29 @@ export default function PartnersPage() {
         return <Badge variant={variant}>{status}</Badge>;
     };
 
+    // Render trust level badge with appropriate color
+    const TrustLevelBadge = ({ trustLevel }: { trustLevel: string }) => {
+        let variant: "default" | "secondary" | "destructive" | "outline" = "secondary";
+
+        switch (trustLevel) {
+            case "trusted":
+                variant = "default";
+                break;
+            case "verified":
+                variant = "secondary";
+                break;
+            case "flagged":
+                variant = "destructive";
+                break;
+            case "unrated":
+            default:
+                variant = "outline";
+                break;
+        }
+
+        return <Badge variant={variant}>{trustLevel}</Badge>;
+    };
+
     return (
         <div className="space-y-6">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -467,6 +545,7 @@ export default function PartnersPage() {
                                         <TableHead>Company</TableHead>
                                         <TableHead>Contact</TableHead>
                                         <TableHead>Status</TableHead>
+                                        <TableHead>Trust Level</TableHead>
                                         <TableHead>Date Added</TableHead>
                                         <TableHead className="text-right">Actions</TableHead>
                                     </TableRow>
@@ -498,6 +577,25 @@ export default function PartnersPage() {
                                                         <SelectItem value="active">Active</SelectItem>
                                                         <SelectItem value="inactive">Inactive</SelectItem>
                                                         <SelectItem value="pending">Pending</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                            </TableCell>
+                                            <TableCell>
+                                                <Select
+                                                    value={partner.trust_level || 'unrated'}
+                                                    onValueChange={(value) => handleTrustLevelChange(
+                                                        partner.id,
+                                                        value as 'unrated' | 'trusted' | 'verified' | 'flagged'
+                                                    )}
+                                                >
+                                                    <SelectTrigger className="h-8 w-28 px-2">
+                                                        <TrustLevelBadge trustLevel={partner.trust_level || 'unrated'} />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="unrated">Unrated</SelectItem>
+                                                        <SelectItem value="trusted">Trusted</SelectItem>
+                                                        <SelectItem value="verified">Verified</SelectItem>
+                                                        <SelectItem value="flagged">Flagged</SelectItem>
                                                     </SelectContent>
                                                 </Select>
                                             </TableCell>
@@ -674,6 +772,34 @@ export default function PartnersPage() {
                             />
                             {formErrors.location && (
                                 <p className="text-xs text-destructive">{formErrors.location}</p>
+                            )}
+                        </div>
+
+                        <div className="grid gap-2">
+                            <label htmlFor="trust_level" className="text-sm font-medium">
+                                Trust Level
+                            </label>
+                            <Select
+                                value={formData.trust_level}
+                                onValueChange={(value) => {
+                                    setFormData(prev => ({
+                                        ...prev,
+                                        trust_level: value as 'unrated' | 'trusted' | 'verified' | 'flagged'
+                                    }));
+                                }}
+                            >
+                                <SelectTrigger id="trust_level" className={formErrors.trust_level ? "border-destructive" : ""}>
+                                    <SelectValue placeholder="Select trust level" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="unrated">Unrated</SelectItem>
+                                    <SelectItem value="trusted">Trusted</SelectItem>
+                                    <SelectItem value="verified">Verified</SelectItem>
+                                    <SelectItem value="flagged">Flagged</SelectItem>
+                                </SelectContent>
+                            </Select>
+                            {formErrors.trust_level && (
+                                <p className="text-xs text-destructive">{formErrors.trust_level}</p>
                             )}
                         </div>
 
