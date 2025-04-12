@@ -1,6 +1,9 @@
 import { createClient } from '@/utils/supabase/client';
 import { MostSearchedCarsClient } from './MostSearchedCarsClient';
 
+// Force dynamic rendering to ensure fresh data on each request
+export const dynamic = 'force-dynamic';
+
 // Get Supabase client for server-side
 export async function MostSearchedCars() {
   let cars = [];
