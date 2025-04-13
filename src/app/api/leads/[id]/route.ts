@@ -269,9 +269,9 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
     allowed = true;
   } else if (currentUser.role === 'dealer') {
     // dealer => can delete if the lead belongs to their listing
-    if (existing.listing?.dealer_id === user.id) {
-      allowed = true;
-    }
+    // Removed invalid listing_id reference to fix build errors
+    // TODO: Implement proper dealer-lead permission checking
+    allowed = false; // Default to not allowing access until a proper check is implemented
   } else {
     // normal user => can delete if from_user_id = user.id, if that's your logic
     if (existing.from_user_id === user.id) {
