@@ -47,9 +47,25 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "@/components/ui/use-toast";
-import { Search, Plus, Pencil, Trash2, RefreshCcw, User } from "lucide-react";
+import { Search, Plus, Pencil, Trash2, RefreshCcw, User, ChevronDown, ChevronRight, X, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { z } from "zod";
+import {
+    Command,
+    CommandEmpty,
+    CommandGroup,
+    CommandInput,
+    CommandItem,
+} from "@/components/ui/command";
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+    Checkbox,
+} from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 
 // Define the Partner type based on the database schema
 interface Partner {
@@ -125,6 +141,27 @@ export default function PartnersPage() {
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
     const [partnerToDelete, setPartnerToDelete] = useState<Partner | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
+
+    // Add these state variables to the Partners component
+    const [selectedPartnerIds, setSelectedPartnerIds] = useState<string[]>([]);
+    const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
+    const [selectedTrustLevels, setSelectedTrustLevels] = useState<string[]>([]);
+    const [manualContacts, setManualContacts] = useState<string>('');
+    const [isSharing, setIsSharing] = useState(false);
+    const [selectAll, setSelectAll] = useState(false);
+    const [sharingPartners, setSharingPartners] = useState<{ id: string, name: string, contact_email: string | null, contact_phone: string | null }[]>([]);
+    const [selectedSharingPartnerIds, setSelectedSharingPartnerIds] = useState<string[]>([]);
+    const [loadingSharingPartners, setLoadingSharingPartners] = useState(false);
+    const [isPanelExpanded, setIsPanelExpanded] = useState(false);
+
+    // Available channels and trust levels
+    const availableChannels = [
+        'WhatsApp', 'Email', 'Slack', 'Telegram', 'SMS'
+    ];
+
+    const availableTrustLevels = [
+        'trusted', 'verified', 'flagged', 'unrated'
+    ];
 
     // Filter partners based on search query
     useEffect(() => {
@@ -478,6 +515,175 @@ export default function PartnersPage() {
         return <Badge variant={variant}>{trustLevel}</Badge>;
     };
 
+    // Handle checkbox selection for all partners
+    const handleSelectAllChange = (checked: boolean) => {
+        setSelectAll(checked);
+        if (checked) {
+            const allIds = filteredPartners.map(partner => partner.id);
+            setSelectedPartnerIds(allIds);
+        } else {
+            setSelectedPartnerIds([]);
+        }
+    };
+
+    // Handle individual checkbox selection
+    const handleCheckboxChange = (id: string, checked: boolean) => {
+        if (checked) {
+            setSelectedPartnerIds(prev => [...prev, id]);
+        } else {
+            setSelectedPartnerIds(prev => prev.filter(partnerId => partnerId !== id));
+            setSelectAll(false);
+        }
+    };
+
+    // Toggle selection of channel
+    const toggleChannel = (channel: string) => {
+        setSelectedChannels(prev =>
+            prev.includes(channel)
+                ? prev.filter(c => c !== channel)
+                : [...prev, channel]
+        );
+    };
+
+    // Toggle selection of trust level
+    const toggleTrustLevel = (level: string) => {
+        setSelectedTrustLevels(prev =>
+            prev.includes(level)
+                ? prev.filter(l => l !== level)
+                : [...prev, level]
+        );
+    };
+
+    // Fetch partners for sharing dropdown
+    const fetchSharingPartners = async () => {
+        setLoadingSharingPartners(true);
+        try {
+            const { data, error } = await supabase
+                .from('partners')
+                .select('id, name, contact_email, contact_phone')
+                .eq('is_active', true)
+                .order('name', { ascending: true });
+
+            if (error) throw error;
+            setSharingPartners(data || []);
+        } catch (err: any) {
+            console.error('Error fetching partners for sharing:', err);
+        } finally {
+            setLoadingSharingPartners(false);
+        }
+    };
+
+    // Fetch sharing partners when component mounts
+    useEffect(() => {
+        fetchSharingPartners();
+    }, []);
+
+    // Toggle sharing partner selection
+    const toggleSharingPartner = (partnerId: string) => {
+        setSelectedSharingPartnerIds(prev =>
+            prev.includes(partnerId)
+                ? prev.filter(id => id !== partnerId)
+                : [...prev, partnerId]
+        );
+    };
+
+    // Get all contact information from selected sharing partners
+    const getSelectedSharingPartnerContacts = (): string[] => {
+        const contacts: string[] = [];
+
+        selectedSharingPartnerIds.forEach(id => {
+            const partner = sharingPartners.find(p => p.id === id);
+            if (partner) {
+                if (partner.contact_email) contacts.push(partner.contact_email);
+                if (partner.contact_phone) contacts.push(partner.contact_phone);
+            }
+        });
+
+        return contacts;
+    };
+
+    // Share partners with network
+    const handleSharePartners = async () => {
+        if (selectedPartnerIds.length === 0) {
+            toast({
+                title: "No Partners Selected",
+                description: "Please select at least one partner to share.",
+                variant: "destructive"
+            });
+            return;
+        }
+
+        if (selectedChannels.length === 0 && selectedTrustLevels.length === 0 &&
+            !manualContacts.trim() && selectedSharingPartnerIds.length === 0) {
+            toast({
+                title: "No Share Target Selected",
+                description: "Please select channels, trust levels, partners, or enter manual contacts.",
+                variant: "destructive"
+            });
+            return;
+        }
+
+        setIsSharing(true);
+
+        try {
+            // Process manual contacts
+            const manualContactsList = manualContacts
+                .split(',')
+                .map(contact => contact.trim())
+                .filter(contact => contact.length > 0);
+
+            // Get partner contacts
+            const partnerContacts = getSelectedSharingPartnerContacts();
+
+            // Combine both contact lists
+            const allContacts = [...manualContactsList, ...partnerContacts];
+
+            // Get current user's ID as dealer_id
+            const { data: { user } } = await supabase.auth.getUser();
+            const dealerId = user?.id;
+
+            const payload = {
+                partner_ids: selectedPartnerIds,
+                dealer_id: dealerId,
+                channels: selectedChannels,
+                shared_with_trust_levels: selectedTrustLevels,
+                shared_with_contacts: allContacts,
+                message: "Check out these partners."
+            };
+
+            const response = await fetch('/api/partner-shares', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(payload),
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.message || 'Failed to share partners');
+            }
+
+            toast({
+                title: "Success",
+                description: `Shared ${selectedPartnerIds.length} partner(s) with your network.`,
+            });
+
+            // Reset selections after successful share
+            setSelectedPartnerIds([]);
+            setSelectAll(false);
+        } catch (err: any) {
+            console.error('Error sharing partners:', err);
+            toast({
+                title: "Share Failed",
+                description: err.message || 'An error occurred while sharing partners.',
+                variant: "destructive"
+            });
+        } finally {
+            setIsSharing(false);
+        }
+    };
+
     return (
         <div className="space-y-6">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -497,6 +703,241 @@ export default function PartnersPage() {
                         Add Partner
                     </Button>
                 </div>
+            </div>
+
+            {/* Add after the header and before the Card component */}
+            <div className="bg-white p-4 rounded-lg shadow-sm mb-6 border border-gray-200">
+                <div
+                    className="flex items-center justify-between cursor-pointer"
+                    onClick={() => setIsPanelExpanded(!isPanelExpanded)}
+                >
+                    <div className="flex items-center">
+                        <h2 className="text-lg font-semibold text-gray-700">Share Partners With Network</h2>
+                        <Badge variant="outline" className="ml-2 bg-blue-50">
+                            {selectedPartnerIds.length} {selectedPartnerIds.length === 1 ? 'partner' : 'partners'} selected
+                        </Badge>
+                    </div>
+                    <Button variant="ghost" size="sm" className="p-1">
+                        {isPanelExpanded ? (
+                            <ChevronDown className="h-5 w-5" />
+                        ) : (
+                            <ChevronRight className="h-5 w-5" />
+                        )}
+                    </Button>
+                </div>
+
+                {isPanelExpanded && (
+                    <div className="mt-4 transition-all duration-300 ease-in-out">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 items-end">
+                            {/* Channels Multiselect */}
+                            <div>
+                                <Label htmlFor="channels">Channels</Label>
+                                <Popover>
+                                    <PopoverTrigger asChild>
+                                        <Button
+                                            variant="outline"
+                                            className="w-full justify-between overflow-hidden text-left font-normal"
+                                        >
+                                            {selectedChannels.length > 0
+                                                ? `${selectedChannels.length} selected`
+                                                : "Select channels"}
+                                            <ChevronDown className="h-4 w-4 opacity-50" />
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-full p-0" align="start">
+                                        <Command className="bg-white">
+                                            <CommandInput placeholder="Search channels..." className="bg-white" />
+                                            <CommandEmpty>No channels found.</CommandEmpty>
+                                            <CommandGroup>
+                                                {availableChannels.map((channel) => (
+                                                    <CommandItem
+                                                        key={channel}
+                                                        onSelect={() => toggleChannel(channel)}
+                                                        className="flex items-center gap-2 text-gray-800"
+                                                    >
+                                                        <Checkbox
+                                                            checked={selectedChannels.includes(channel)}
+                                                            onCheckedChange={() => { }}
+                                                            className="mr-2"
+                                                        />
+                                                        {channel}
+                                                    </CommandItem>
+                                                ))}
+                                            </CommandGroup>
+                                        </Command>
+                                    </PopoverContent>
+                                </Popover>
+                                {selectedChannels.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mt-2">
+                                        {selectedChannels.map(channel => (
+                                            <Badge
+                                                key={channel}
+                                                variant="secondary"
+                                                className="flex items-center gap-1"
+                                            >
+                                                {channel}
+                                                <X
+                                                    className="h-3 w-3 cursor-pointer"
+                                                    onClick={() => toggleChannel(channel)}
+                                                />
+                                            </Badge>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Trust Levels Multiselect */}
+                            <div>
+                                <Label htmlFor="trust-levels">Trust Levels</Label>
+                                <Popover>
+                                    <PopoverTrigger asChild>
+                                        <Button
+                                            variant="outline"
+                                            className="w-full justify-between overflow-hidden text-left font-normal"
+                                        >
+                                            {selectedTrustLevels.length > 0
+                                                ? `${selectedTrustLevels.length} selected`
+                                                : "Select trust levels"}
+                                            <ChevronDown className="h-4 w-4 opacity-50" />
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-full p-0" align="start">
+                                        <Command className="bg-white">
+                                            <CommandInput placeholder="Search trust levels..." className="bg-white" />
+                                            <CommandEmpty>No trust levels found.</CommandEmpty>
+                                            <CommandGroup>
+                                                {availableTrustLevels.map((level) => (
+                                                    <CommandItem
+                                                        key={level}
+                                                        onSelect={() => toggleTrustLevel(level)}
+                                                        className="flex items-center gap-2 text-gray-800"
+                                                    >
+                                                        <Checkbox
+                                                            checked={selectedTrustLevels.includes(level)}
+                                                            onCheckedChange={() => { }}
+                                                            className="mr-2"
+                                                        />
+                                                        <span className="capitalize">{level}</span>
+                                                    </CommandItem>
+                                                ))}
+                                            </CommandGroup>
+                                        </Command>
+                                    </PopoverContent>
+                                </Popover>
+                                {selectedTrustLevels.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mt-2">
+                                        {selectedTrustLevels.map(level => (
+                                            <Badge
+                                                key={level}
+                                                variant="secondary"
+                                                className="flex items-center gap-1 capitalize"
+                                            >
+                                                {level}
+                                                <X
+                                                    className="h-3 w-3 cursor-pointer"
+                                                    onClick={() => toggleTrustLevel(level)}
+                                                />
+                                            </Badge>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Manual Contacts */}
+                            <div>
+                                <Label htmlFor="manual-contacts">Manual Contacts (comma-separated)</Label>
+                                <Input
+                                    id="manual-contacts"
+                                    placeholder="email@example.com, +1234567890"
+                                    value={manualContacts}
+                                    onChange={(e) => setManualContacts(e.target.value)}
+                                />
+                            </div>
+
+                            {/* Share button */}
+                            <div className="flex items-end">
+                                <Button
+                                    id="share-button"
+                                    onClick={handleSharePartners}
+                                    disabled={isSharing || selectedPartnerIds.length === 0}
+                                    className="w-full mb-1"
+                                >
+                                    {isSharing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                                    Share Partners
+                                </Button>
+                            </div>
+
+                            {/* Share with Partners selection */}
+                            <div className="col-span-full mt-2">
+                                <Label htmlFor="sharing-partners">Select Partners to Share With</Label>
+                                <Popover>
+                                    <PopoverTrigger asChild>
+                                        <Button
+                                            variant="outline"
+                                            className="w-full justify-between overflow-hidden text-left font-normal"
+                                        >
+                                            {selectedSharingPartnerIds.length > 0
+                                                ? `${selectedSharingPartnerIds.length} partner(s) selected`
+                                                : "Select partners to share with"}
+                                            <ChevronDown className="h-4 w-4 opacity-50" />
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-full p-0" align="start">
+                                        <Command className="bg-white">
+                                            <CommandInput placeholder="Search partners..." className="bg-white" />
+                                            <CommandEmpty>
+                                                {loadingSharingPartners ? "Loading partners..." : "No partners found."}
+                                            </CommandEmpty>
+                                            <CommandGroup>
+                                                {sharingPartners.map((partner) => (
+                                                    <CommandItem
+                                                        key={partner.id}
+                                                        onSelect={() => toggleSharingPartner(partner.id)}
+                                                        className="flex items-center gap-2 text-gray-800"
+                                                    >
+                                                        <Checkbox
+                                                            checked={selectedSharingPartnerIds.includes(partner.id)}
+                                                            onCheckedChange={() => { }}
+                                                            className="mr-2"
+                                                        />
+                                                        <div className="flex flex-col">
+                                                            <span>{partner.name || 'Unnamed Partner'}</span>
+                                                            {(partner.contact_email || partner.contact_phone) && (
+                                                                <span className="text-xs text-gray-500">
+                                                                    {partner.contact_email || partner.contact_phone}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </CommandItem>
+                                                ))}
+                                            </CommandGroup>
+                                        </Command>
+                                    </PopoverContent>
+                                </Popover>
+                                {selectedSharingPartnerIds.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mt-2">
+                                        {selectedSharingPartnerIds.map(id => {
+                                            const partner = sharingPartners.find(p => p.id === id);
+                                            return partner ? (
+                                                <Badge
+                                                    key={id}
+                                                    variant="secondary"
+                                                    className="flex items-center gap-1"
+                                                >
+                                                    {partner.name || partner.contact_email || partner.contact_phone || 'Partner'}
+                                                    <X
+                                                        className="h-3 w-3 cursor-pointer"
+                                                        onClick={() => toggleSharingPartner(id)}
+                                                    />
+                                                </Badge>
+                                            ) : null;
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
 
             <Card>
@@ -541,20 +982,34 @@ export default function PartnersPage() {
                             <Table>
                                 <TableHeader>
                                     <TableRow>
-                                        <TableHead>Name</TableHead>
-                                        <TableHead>Company</TableHead>
+                                        <TableHead className="w-10">
+                                            <Checkbox
+                                                checked={selectAll}
+                                                onCheckedChange={handleSelectAllChange}
+                                                aria-label="Select all partners"
+                                            />
+                                        </TableHead>
+                                        <TableHead>Partner</TableHead>
                                         <TableHead>Contact</TableHead>
+                                        <TableHead>Company</TableHead>
+                                        <TableHead>Location</TableHead>
                                         <TableHead>Status</TableHead>
                                         <TableHead>Trust Level</TableHead>
-                                        <TableHead>Date Added</TableHead>
+                                        <TableHead>Created</TableHead>
                                         <TableHead className="text-right">Actions</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
                                     {filteredPartners.map((partner) => (
                                         <TableRow key={partner.id}>
+                                            <TableCell>
+                                                <Checkbox
+                                                    checked={selectedPartnerIds.includes(partner.id)}
+                                                    onCheckedChange={(checked) => handleCheckboxChange(partner.id, checked === true)}
+                                                    aria-label={`Select partner ${partner.name}`}
+                                                />
+                                            </TableCell>
                                             <TableCell className="font-medium">{partner.name}</TableCell>
-                                            <TableCell>{partner.company || '—'}</TableCell>
                                             <TableCell>
                                                 <div className="flex flex-col">
                                                     {partner.email && <span className="text-sm">{partner.email}</span>}
@@ -562,6 +1017,8 @@ export default function PartnersPage() {
                                                     {!partner.email && !partner.phone && '—'}
                                                 </div>
                                             </TableCell>
+                                            <TableCell>{partner.company || '—'}</TableCell>
+                                            <TableCell>{partner.location || '—'}</TableCell>
                                             <TableCell>
                                                 <Select
                                                     value={partner.status}

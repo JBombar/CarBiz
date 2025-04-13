@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { createClient } from '@/utils/supabase/client';
+import { createBrowserClient } from '@supabase/ssr';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -21,6 +22,21 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { ChevronDown, ChevronRight } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 
 // Define the Lead type based on the table schema
 type Lead = {
@@ -60,6 +76,25 @@ export default function LeadsPage() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState<boolean>(false);
   const [leadToDelete, setLeadToDelete] = useState<Lead | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
+  const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
+  const [selectedTrustLevels, setSelectedTrustLevels] = useState<string[]>([]);
+  const [manualContacts, setManualContacts] = useState<string>('');
+  const [isSharing, setIsSharing] = useState(false);
+  const [selectAll, setSelectAll] = useState(false);
+  const [partners, setPartners] = useState<{ id: string, name: string, contact_email: string | null, contact_phone: string | null }[]>([]);
+  const [selectedPartnerIds, setSelectedPartnerIds] = useState<string[]>([]);
+  const [loadingPartners, setLoadingPartners] = useState(false);
+  const [isPanelExpanded, setIsPanelExpanded] = useState(false);
+
+  // Available channels and trust levels
+  const availableChannels = [
+    'WhatsApp', 'Email', 'Slack', 'Telegram', 'SMS'
+  ];
+
+  const availableTrustLevels = [
+    'trusted', 'verified', 'flagged', 'unrated'
+  ];
 
   // Fetch leads on component mount
   useEffect(() => {
@@ -291,6 +326,187 @@ export default function LeadsPage() {
     setIsDeleteDialogOpen(true);
   };
 
+  // Handle checkbox selection for all leads
+  const handleSelectAllChange = (checked: boolean) => {
+    setSelectAll(checked);
+    if (checked) {
+      const allIds = filteredLeads.map(lead => lead.id);
+      setSelectedLeadIds(allIds);
+    } else {
+      setSelectedLeadIds([]);
+    }
+  };
+
+  // Handle individual checkbox selection
+  const handleCheckboxChange = (id: string, checked: boolean) => {
+    if (checked) {
+      setSelectedLeadIds(prev => [...prev, id]);
+    } else {
+      setSelectedLeadIds(prev => prev.filter(leadId => leadId !== id));
+      setSelectAll(false);
+    }
+  };
+
+  // Toggle selection of channel
+  const toggleChannel = (channel: string) => {
+    setSelectedChannels(prev =>
+      prev.includes(channel)
+        ? prev.filter(c => c !== channel)
+        : [...prev, channel]
+    );
+  };
+
+  // Toggle selection of trust level
+  const toggleTrustLevel = (level: string) => {
+    setSelectedTrustLevels(prev =>
+      prev.includes(level)
+        ? prev.filter(l => l !== level)
+        : [...prev, level]
+    );
+  };
+
+  // Fetch partners from Supabase
+  const fetchPartners = async () => {
+    setLoadingPartners(true);
+    try {
+      const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      );
+
+      const { data, error } = await supabase
+        .from('partners')
+        .select('id, name, contact_email, contact_phone')
+        .eq('is_active', true)
+        .order('name', { ascending: true });
+
+      if (error) throw error;
+      setPartners(data || []);
+    } catch (err: any) {
+      console.error('Error fetching partners:', err);
+    } finally {
+      setLoadingPartners(false);
+    }
+  };
+
+  // Fetch partners when component mounts
+  useEffect(() => {
+    fetchPartners();
+  }, []);
+
+  // Toggle partner selection
+  const togglePartner = (partnerId: string) => {
+    setSelectedPartnerIds(prev =>
+      prev.includes(partnerId)
+        ? prev.filter(id => id !== partnerId)
+        : [...prev, partnerId]
+    );
+  };
+
+  // Get all contact information from selected partners
+  const getSelectedPartnerContacts = (): string[] => {
+    const contacts: string[] = [];
+
+    selectedPartnerIds.forEach(id => {
+      const partner = partners.find(p => p.id === id);
+      if (partner) {
+        if (partner.contact_email) contacts.push(partner.contact_email);
+        if (partner.contact_phone) contacts.push(partner.contact_phone);
+      }
+    });
+
+    return contacts;
+  };
+
+  // Share leads with partners
+  const handleShareLeads = async () => {
+    if (selectedLeadIds.length === 0) {
+      toast({
+        title: "No Leads Selected",
+        description: "Please select at least one lead to share.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (selectedChannels.length === 0 && selectedTrustLevels.length === 0 &&
+      !manualContacts.trim() && selectedPartnerIds.length === 0) {
+      toast({
+        title: "No Share Target Selected",
+        description: "Please select channels, trust levels, partners, or enter manual contacts.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsSharing(true);
+
+    try {
+      // Process manual contacts
+      const manualContactsList = manualContacts
+        .split(',')
+        .map(contact => contact.trim())
+        .filter(contact => contact.length > 0);
+
+      // Get partner contacts
+      const partnerContacts = getSelectedPartnerContacts();
+
+      // Combine both contact lists
+      const allContacts = [...manualContactsList, ...partnerContacts];
+
+      // Create Supabase client for auth
+      const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      );
+
+      // Get current user's ID as dealer_id
+      const { data: { user } } = await supabase.auth.getUser();
+      const dealerId = user?.id;
+
+      const payload = {
+        lead_ids: selectedLeadIds,
+        dealer_id: dealerId,
+        channels: selectedChannels,
+        shared_with_trust_levels: selectedTrustLevels,
+        shared_with_contacts: allContacts,
+        shared_with_partner_ids: selectedPartnerIds,
+        message: "Check out these leads."
+      };
+
+      const response = await fetch('/api/share-leads', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to share leads');
+      }
+
+      toast({
+        title: "Success",
+        description: `Shared ${selectedLeadIds.length} lead(s) with your network.`,
+      });
+
+      // Reset selections after successful share
+      setSelectedLeadIds([]);
+      setSelectAll(false);
+    } catch (err: any) {
+      console.error('Error sharing leads:', err);
+      toast({
+        title: "Share Failed",
+        description: err.message || 'An error occurred while sharing leads.',
+        variant: "destructive"
+      });
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
@@ -311,6 +527,241 @@ export default function LeadsPage() {
             className="pl-10 w-full"
           />
         </div>
+      </div>
+
+      {/* Send Leads To Partners Panel - Collapsible */}
+      <div className="bg-white p-4 rounded-lg shadow-sm mb-6 border border-gray-200">
+        <div
+          className="flex items-center justify-between cursor-pointer"
+          onClick={() => setIsPanelExpanded(!isPanelExpanded)}
+        >
+          <div className="flex items-center">
+            <h2 className="text-lg font-semibold text-gray-700">Send Leads To Partners</h2>
+            <Badge variant="outline" className="ml-2 bg-blue-50">
+              {selectedLeadIds.length} {selectedLeadIds.length === 1 ? 'lead' : 'leads'} selected
+            </Badge>
+          </div>
+          <Button variant="ghost" size="sm" className="p-1">
+            {isPanelExpanded ? (
+              <ChevronDown className="h-5 w-5" />
+            ) : (
+              <ChevronRight className="h-5 w-5" />
+            )}
+          </Button>
+        </div>
+
+        {isPanelExpanded && (
+          <div className="mt-4 transition-all duration-300 ease-in-out">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 items-end">
+              {/* Channels Multiselect */}
+              <div>
+                <Label htmlFor="channels">Channels</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-between overflow-hidden text-left font-normal"
+                    >
+                      {selectedChannels.length > 0
+                        ? `${selectedChannels.length} selected`
+                        : "Select channels"}
+                      <ChevronDown className="h-4 w-4 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-full p-0" align="start">
+                    <Command className="bg-white">
+                      <CommandInput placeholder="Search channels..." className="bg-white" />
+                      <CommandEmpty>No channels found.</CommandEmpty>
+                      <CommandGroup>
+                        {availableChannels.map((channel) => (
+                          <CommandItem
+                            key={channel}
+                            onSelect={() => toggleChannel(channel)}
+                            className="flex items-center gap-2 text-gray-800"
+                          >
+                            <Checkbox
+                              checked={selectedChannels.includes(channel)}
+                              onCheckedChange={() => { }}
+                              className="mr-2"
+                            />
+                            {channel}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+                {selectedChannels.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {selectedChannels.map(channel => (
+                      <Badge
+                        key={channel}
+                        variant="secondary"
+                        className="flex items-center gap-1"
+                      >
+                        {channel}
+                        <X
+                          className="h-3 w-3 cursor-pointer"
+                          onClick={() => toggleChannel(channel)}
+                        />
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Trust Levels Multiselect */}
+              <div>
+                <Label htmlFor="trust-levels">Trust Levels</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-between overflow-hidden text-left font-normal"
+                    >
+                      {selectedTrustLevels.length > 0
+                        ? `${selectedTrustLevels.length} selected`
+                        : "Select trust levels"}
+                      <ChevronDown className="h-4 w-4 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-full p-0" align="start">
+                    <Command className="bg-white">
+                      <CommandInput placeholder="Search trust levels..." className="bg-white" />
+                      <CommandEmpty>No trust levels found.</CommandEmpty>
+                      <CommandGroup>
+                        {availableTrustLevels.map((level) => (
+                          <CommandItem
+                            key={level}
+                            onSelect={() => toggleTrustLevel(level)}
+                            className="flex items-center gap-2 text-gray-800"
+                          >
+                            <Checkbox
+                              checked={selectedTrustLevels.includes(level)}
+                              onCheckedChange={() => { }}
+                              className="mr-2"
+                            />
+                            {level}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+                {selectedTrustLevels.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {selectedTrustLevels.map(level => (
+                      <Badge
+                        key={level}
+                        variant="secondary"
+                        className="flex items-center gap-1"
+                      >
+                        {level}
+                        <X
+                          className="h-3 w-3 cursor-pointer"
+                          onClick={() => toggleTrustLevel(level)}
+                        />
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Manual Contacts */}
+              <div>
+                <Label htmlFor="manual-contacts">Manual Contacts (comma-separated)</Label>
+                <Input
+                  id="manual-contacts"
+                  placeholder="email@example.com, +1234567890"
+                  value={manualContacts}
+                  onChange={(e) => setManualContacts(e.target.value)}
+                />
+              </div>
+
+              {/* Share button */}
+              <div className="flex items-end">
+                <Button
+                  id="share-button"
+                  onClick={handleShareLeads}
+                  disabled={isSharing || selectedLeadIds.length === 0}
+                  className="w-full mb-1"
+                >
+                  {isSharing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                  Share Leads
+                </Button>
+              </div>
+
+              {/* Partners selection */}
+              <div className="col-span-full mt-2">
+                <Label htmlFor="partners">Select Partners</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-between overflow-hidden text-left font-normal"
+                    >
+                      {selectedPartnerIds.length > 0
+                        ? `${selectedPartnerIds.length} partner(s) selected`
+                        : "Select partners to share with"}
+                      <ChevronDown className="h-4 w-4 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-full p-0" align="start">
+                    <Command className="bg-white">
+                      <CommandInput placeholder="Search partners..." className="bg-white" />
+                      <CommandEmpty>
+                        {loadingPartners ? "Loading partners..." : "No partners found."}
+                      </CommandEmpty>
+                      <CommandGroup>
+                        {partners.map((partner) => (
+                          <CommandItem
+                            key={partner.id}
+                            onSelect={() => togglePartner(partner.id)}
+                            className="flex items-center gap-2 text-gray-800"
+                          >
+                            <Checkbox
+                              checked={selectedPartnerIds.includes(partner.id)}
+                              onCheckedChange={() => { }}
+                              className="mr-2"
+                            />
+                            <div className="flex flex-col">
+                              <span>{partner.name || 'Unnamed Partner'}</span>
+                              {(partner.contact_email || partner.contact_phone) && (
+                                <span className="text-xs text-gray-500">
+                                  {partner.contact_email || partner.contact_phone}
+                                </span>
+                              )}
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+                {selectedPartnerIds.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {selectedPartnerIds.map(id => {
+                      const partner = partners.find(p => p.id === id);
+                      return partner ? (
+                        <Badge
+                          key={id}
+                          variant="secondary"
+                          className="flex items-center gap-1"
+                        >
+                          {partner.name || partner.contact_email || partner.contact_phone || 'Partner'}
+                          <X
+                            className="h-3 w-3 cursor-pointer"
+                            onClick={() => togglePartner(id)}
+                          />
+                        </Badge>
+                      ) : null;
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {isLoading ? (
@@ -343,6 +794,13 @@ export default function LeadsPage() {
           <table className="w-full border-collapse">
             <thead>
               <tr className="border-b bg-muted/50">
+                <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground w-12">
+                  <Checkbox
+                    checked={selectAll}
+                    onCheckedChange={handleSelectAllChange}
+                    aria-label="Select all leads"
+                  />
+                </th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Name</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Contact</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Vehicle</th>
@@ -356,6 +814,13 @@ export default function LeadsPage() {
             <tbody>
               {filteredLeads.map((lead) => (
                 <tr key={lead.id} className="border-b hover:bg-muted/50 transition-colors">
+                  <td className="px-4 py-3 text-sm">
+                    <Checkbox
+                      checked={selectedLeadIds.includes(lead.id)}
+                      onCheckedChange={(checked) => handleCheckboxChange(lead.id, checked === true)}
+                      aria-label={`Select lead from ${lead.full_name}`}
+                    />
+                  </td>
                   <td className="px-4 py-3 text-sm">
                     <div className="font-medium">{lead.full_name || 'N/A'}</div>
                   </td>
