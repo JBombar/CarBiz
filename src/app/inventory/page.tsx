@@ -202,6 +202,9 @@ function InventoryPage() {
     setError(null);
     const queryParams = new URLSearchParams();
 
+    // Always add is_public=true filter to only show listings marked as public
+    queryParams.append('is_public', 'true');
+
     // Build query params - Check for undefined on optional fields
     if (currentFilters.make !== defaultFilters.make) queryParams.append('make', currentFilters.make);
     if (currentFilters.model && currentFilters.model !== defaultFilters.model && currentFilters.model !== "Any") queryParams.append('model', currentFilters.model);

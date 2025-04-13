@@ -45,6 +45,13 @@ const inventoryQuerySchema = z.object({
     'make', 'model', 'condition', 'status' // Add any other valid sort columns
   ]).default('created_at'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
+
+  // Add is_public as a boolean parameter with string coercion
+  is_public: z.union([
+    z.literal('true').transform(() => true),
+    z.literal('false').transform(() => false),
+    z.boolean()
+  ]).optional().default(true),
 }).passthrough(); // Allow other params to pass through
 
 // Define type for validated query parameters
@@ -191,6 +198,13 @@ export async function GET(request: NextRequest) {
       // Adjust logic if 0 should mean something else (e.g., "up to 0")
       query = query.lte('mileage', validatedParams.mileage_max);
       console.log(`API: Filtering by mileage_max: <= ${validatedParams.mileage_max}`);
+    }
+
+    // After the other filters, add is_public filter
+    // Always filter by is_public if it's provided in the params
+    if (validatedParams.is_public !== undefined) {
+      query = query.eq('is_public', validatedParams.is_public);
+      console.log(`API: Filtering by is_public: ${validatedParams.is_public}`);
     }
 
     // --- Apply Sorting ---
