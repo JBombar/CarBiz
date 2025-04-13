@@ -16,6 +16,19 @@ import { Textarea } from "@/components/ui/textarea"; // Assuming Shadcn Textarea
 import { Label } from "@/components/ui/label"; // Assuming Shadcn Label
 import { Separator } from "@/components/ui/separator"; // For visual separation
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Badge } from "@/components/ui/badge";
 
 // Icons (Example using Heroicons - install @heroicons/react)
 import {
@@ -30,7 +43,9 @@ import {
   CheckIcon,
   ExclamationTriangleIcon,
   CloudArrowUpIcon,
-  PhotoIcon
+  PhotoIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
 } from '@heroicons/react/24/outline';
 
 
@@ -702,6 +717,196 @@ export default function InventoryPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedImageIndex, currentCar]);
 
+  // New state for Share With Network panel
+  const [selectedListingIds, setSelectedListingIds] = useState<string[]>([]);
+  const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
+  const [selectedTrustLevels, setSelectedTrustLevels] = useState<string[]>([]);
+  const [manualContacts, setManualContacts] = useState<string>('');
+  const [isSharing, setIsSharing] = useState(false);
+  const [selectAll, setSelectAll] = useState(false);
+
+  // Available channels and trust levels
+  const availableChannels = [
+    'WhatsApp', 'Email', 'Slack', 'Telegram', 'SMS'
+  ];
+
+  const availableTrustLevels = [
+    'trusted', 'verified', 'flagged', 'unrated'
+  ];
+
+  // Handle checkbox selection for all listings
+  const handleSelectAllChange = (checked: boolean) => {
+    setSelectAll(checked);
+    if (checked) {
+      const allIds = inventory.map(car => car.id);
+      setSelectedListingIds(allIds);
+    } else {
+      setSelectedListingIds([]);
+    }
+  };
+
+  // Handle individual checkbox selection
+  const handleCheckboxChange = (id: string, checked: boolean) => {
+    if (checked) {
+      setSelectedListingIds(prev => [...prev, id]);
+    } else {
+      setSelectedListingIds(prev => prev.filter(listingId => listingId !== id));
+      setSelectAll(false);
+    }
+  };
+
+  // Toggle selection of channel
+  const toggleChannel = (channel: string) => {
+    setSelectedChannels(prev =>
+      prev.includes(channel)
+        ? prev.filter(c => c !== channel)
+        : [...prev, channel]
+    );
+  };
+
+  // Toggle selection of trust level
+  const toggleTrustLevel = (level: string) => {
+    setSelectedTrustLevels(prev =>
+      prev.includes(level)
+        ? prev.filter(l => l !== level)
+        : [...prev, level]
+    );
+  };
+
+  // Add these new state variables after the existing Share With Network panel state variables
+  const [partners, setPartners] = useState<{ id: string, name: string, contact_email: string | null, contact_phone: string | null }[]>([]);
+  const [selectedPartnerIds, setSelectedPartnerIds] = useState<string[]>([]);
+  const [loadingPartners, setLoadingPartners] = useState(false);
+
+  // Add this function to fetch partners from Supabase
+  const fetchPartners = async () => {
+    setLoadingPartners(true);
+    try {
+      const { data, error } = await supabase
+        .from('partners')
+        .select('id, name, contact_email, contact_phone')
+        .eq('is_active', true)
+        .order('name', { ascending: true });
+
+      if (error) throw error;
+      setPartners(data || []);
+    } catch (err: any) {
+      console.error('Error fetching partners:', err);
+      // Not showing an error toast as this is not critical to the page functioning
+    } finally {
+      setLoadingPartners(false);
+    }
+  };
+
+  // Add this useEffect to fetch partners when the component mounts
+  useEffect(() => {
+    fetchPartners();
+  }, []);
+
+  // Add this function to toggle partner selection
+  const togglePartner = (partnerId: string) => {
+    setSelectedPartnerIds(prev =>
+      prev.includes(partnerId)
+        ? prev.filter(id => id !== partnerId)
+        : [...prev, partnerId]
+    );
+  };
+
+  // Function to get all contact information from selected partners
+  const getSelectedPartnerContacts = (): string[] => {
+    const contacts: string[] = [];
+
+    selectedPartnerIds.forEach(id => {
+      const partner = partners.find(p => p.id === id);
+      if (partner) {
+        if (partner.contact_email) contacts.push(partner.contact_email);
+        if (partner.contact_phone) contacts.push(partner.contact_phone);
+      }
+    });
+
+    return contacts;
+  };
+
+  // Modify the handleShareListings function to include partner contacts
+  const handleShareListings = async () => {
+    if (selectedListingIds.length === 0) {
+      toast({
+        title: "No Listings Selected",
+        description: "Please select at least one listing to share.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (selectedChannels.length === 0 && selectedTrustLevels.length === 0 &&
+      !manualContacts.trim() && selectedPartnerIds.length === 0) {
+      toast({
+        title: "No Share Target Selected",
+        description: "Please select channels, trust levels, partners, or enter manual contacts.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsSharing(true);
+
+    try {
+      // Process manual contacts
+      const manualContactsList = manualContacts
+        .split(',')
+        .map(contact => contact.trim())
+        .filter(contact => contact.length > 0);
+
+      // Get partner contacts
+      const partnerContacts = getSelectedPartnerContacts();
+
+      // Combine both contact lists
+      const allContacts = [...manualContactsList, ...partnerContacts];
+
+      const payload = {
+        listing_ids: selectedListingIds,
+        dealer_id: dealerId || await fetchDealerId(),
+        channels: selectedChannels,
+        shared_with_trust_levels: selectedTrustLevels,
+        shared_with_contacts: allContacts,
+        message: "Check out these listings."
+      };
+
+      const response = await fetch('/api/share-listings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to share listings');
+      }
+
+      toast({
+        title: "Success",
+        description: `Shared ${selectedListingIds.length} listing(s) with your network.`,
+      });
+
+      // Reset selections after successful share
+      setSelectedListingIds([]);
+      setSelectAll(false);
+    } catch (err: any) {
+      console.error('Error sharing listings:', err);
+      toast({
+        title: "Share Failed",
+        description: err.message || 'An error occurred while sharing listings.',
+        variant: "destructive"
+      });
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
+  // Add this new state variable with the other state variables
+  const [isPanelExpanded, setIsPanelExpanded] = useState(false);
 
   // --- Render ---
 
@@ -748,6 +953,241 @@ export default function InventoryPage() {
         </div>
       </div>
 
+      {/* Send Listings To Partners Panel - Now Collapsible */}
+      <div className="bg-white p-4 rounded-lg shadow-sm mb-6 border border-gray-200">
+        <div
+          className="flex items-center justify-between cursor-pointer"
+          onClick={() => setIsPanelExpanded(!isPanelExpanded)}
+        >
+          <div className="flex items-center">
+            <h2 className="text-lg font-semibold text-gray-700">Send Listings To Partners</h2>
+            <Badge variant="outline" className="ml-2 bg-blue-50">
+              {selectedListingIds.length} {selectedListingIds.length === 1 ? 'listing' : 'listings'} selected
+            </Badge>
+          </div>
+          <Button variant="ghost" size="sm" className="p-1">
+            {isPanelExpanded ? (
+              <ChevronDownIcon className="h-5 w-5" />
+            ) : (
+              <ChevronRightIcon className="h-5 w-5" />
+            )}
+          </Button>
+        </div>
+
+        {isPanelExpanded && (
+          <div className="mt-4 transition-all duration-300 ease-in-out">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 items-end">
+              {/* Channels Multiselect - unchanged */}
+              <div>
+                <Label htmlFor="channels">Channels</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-between overflow-hidden text-left font-normal"
+                    >
+                      {selectedChannels.length > 0
+                        ? `${selectedChannels.length} selected`
+                        : "Select channels"}
+                      <ChevronDownIcon className="h-4 w-4 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-full p-0" align="start">
+                    <Command className="bg-white">
+                      <CommandInput placeholder="Search channels..." className="bg-white" />
+                      <CommandEmpty>No channels found.</CommandEmpty>
+                      <CommandGroup>
+                        {availableChannels.map((channel) => (
+                          <CommandItem
+                            key={channel}
+                            onSelect={() => toggleChannel(channel)}
+                            className="flex items-center gap-2 text-gray-800"
+                          >
+                            <Checkbox
+                              checked={selectedChannels.includes(channel)}
+                              onCheckedChange={() => { }}
+                              className="mr-2"
+                            />
+                            {channel}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+                {selectedChannels.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {selectedChannels.map(channel => (
+                      <Badge
+                        key={channel}
+                        variant="secondary"
+                        className="flex items-center gap-1"
+                      >
+                        {channel}
+                        <XMarkIcon
+                          className="h-3 w-3 cursor-pointer"
+                          onClick={() => toggleChannel(channel)}
+                        />
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Trust Levels Multiselect - unchanged */}
+              <div>
+                <Label htmlFor="trust-levels">Trust Levels</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-between overflow-hidden text-left font-normal"
+                    >
+                      {selectedTrustLevels.length > 0
+                        ? `${selectedTrustLevels.length} selected`
+                        : "Select trust levels"}
+                      <ChevronDownIcon className="h-4 w-4 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-full p-0" align="start">
+                    <Command className="bg-white">
+                      <CommandInput placeholder="Search trust levels..." className="bg-white" />
+                      <CommandEmpty>No trust levels found.</CommandEmpty>
+                      <CommandGroup>
+                        {availableTrustLevels.map((level) => (
+                          <CommandItem
+                            key={level}
+                            onSelect={() => toggleTrustLevel(level)}
+                            className="flex items-center gap-2 text-gray-800"
+                          >
+                            <Checkbox
+                              checked={selectedTrustLevels.includes(level)}
+                              onCheckedChange={() => { }}
+                              className="mr-2"
+                            />
+                            <span className="capitalize">{level}</span>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+                {selectedTrustLevels.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {selectedTrustLevels.map(level => (
+                      <Badge
+                        key={level}
+                        variant="secondary"
+                        className="flex items-center gap-1 capitalize"
+                      >
+                        {level}
+                        <XMarkIcon
+                          className="h-3 w-3 cursor-pointer"
+                          onClick={() => toggleTrustLevel(level)}
+                        />
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Manual Contacts - unchanged */}
+              <div>
+                <Label htmlFor="manual-contacts">Manual Contacts (comma-separated)</Label>
+                <Input
+                  id="manual-contacts"
+                  placeholder="email@example.com, +1234567890"
+                  value={manualContacts}
+                  onChange={(e) => setManualContacts(e.target.value)}
+                />
+              </div>
+
+              {/* Share button - Now aligned with inputs */}
+              <div className="flex items-end">
+                <Button
+                  id="share-button"
+                  onClick={handleShareListings}
+                  disabled={isSharing || selectedListingIds.length === 0}
+                  className="w-full mb-1"
+                >
+                  {isSharing ? <ArrowPathIcon className="animate-spin h-4 w-4 mr-2" /> : null}
+                  Share Listings
+                </Button>
+              </div>
+
+              {/* Partners selection - Now a separate row for better visual balance */}
+              <div className="col-span-full mt-2">
+                <Label htmlFor="partners">Select Partners</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-between overflow-hidden text-left font-normal"
+                    >
+                      {selectedPartnerIds.length > 0
+                        ? `${selectedPartnerIds.length} partner(s) selected`
+                        : "Select partners to share with"}
+                      <ChevronDownIcon className="h-4 w-4 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-full p-0" align="start">
+                    <Command className="bg-white">
+                      <CommandInput placeholder="Search partners..." className="bg-white" />
+                      <CommandEmpty>
+                        {loadingPartners ? "Loading partners..." : "No partners found."}
+                      </CommandEmpty>
+                      <CommandGroup>
+                        {partners.map((partner) => (
+                          <CommandItem
+                            key={partner.id}
+                            onSelect={() => togglePartner(partner.id)}
+                            className="flex items-center gap-2 text-gray-800"
+                          >
+                            <Checkbox
+                              checked={selectedPartnerIds.includes(partner.id)}
+                              onCheckedChange={() => { }}
+                              className="mr-2"
+                            />
+                            <div className="flex flex-col">
+                              <span>{partner.name || 'Unnamed Partner'}</span>
+                              {(partner.contact_email || partner.contact_phone) && (
+                                <span className="text-xs text-gray-500">
+                                  {partner.contact_email || partner.contact_phone}
+                                </span>
+                              )}
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+                {selectedPartnerIds.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {selectedPartnerIds.map(id => {
+                      const partner = partners.find(p => p.id === id);
+                      return partner ? (
+                        <Badge
+                          key={id}
+                          variant="secondary"
+                          className="flex items-center gap-1"
+                        >
+                          {partner.name || partner.contact_email || partner.contact_phone || 'Partner'}
+                          <XMarkIcon
+                            className="h-3 w-3 cursor-pointer"
+                            onClick={() => togglePartner(id)}
+                          />
+                        </Badge>
+                      ) : null;
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Inventory Table / Loading / Error State */}
       <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-200">
         {loading ? (
@@ -761,6 +1201,14 @@ export default function InventoryPage() {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
+                  {/* New checkbox column */}
+                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <Checkbox
+                      checked={selectAll}
+                      onCheckedChange={handleSelectAllChange}
+                      aria-label="Select all"
+                    />
+                  </th>
                   {/* Make Headers Clickable for Sorting */}
                   {['make', 'model', 'year', 'price', 'status', 'mileage', 'listing_type', 'shared_with', 'listing_views', 'created_at'].map(field => (
                     <th key={field}
@@ -777,10 +1225,18 @@ export default function InventoryPage() {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {inventory.length === 0 ? (
-                  <tr><td colSpan={10} className="px-4 py-8 text-center text-gray-500">No vehicles found.</td></tr>
+                  <tr><td colSpan={11} className="px-4 py-8 text-center text-gray-500">No vehicles found.</td></tr>
                 ) : (
                   inventory.map(car => (
                     <tr key={car.id} className="hover:bg-gray-50 transition-colors">
+                      {/* Checkbox Cell */}
+                      <td className="px-4 py-3 whitespace-nowrap text-sm">
+                        <Checkbox
+                          checked={selectedListingIds.includes(car.id)}
+                          onCheckedChange={(checked) => handleCheckboxChange(car.id, checked === true)}
+                          aria-label={`Select ${car.make} ${car.model}`}
+                        />
+                      </td>
                       {/* Table Data Cells */}
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-800">{car.make}</td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-800">{car.model}</td>
@@ -799,13 +1255,13 @@ export default function InventoryPage() {
                         {car.shared_with_trust_levels && car.shared_with_trust_levels.length > 0 ? (
                           <div className="flex flex-wrap gap-1">
                             {car.shared_with_trust_levels.map(level => (
-                              <span key={level} className={`px-2 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full capitalize
-                                ${level === 'trusted' ? 'bg-green-100 text-green-800' :
-                                  level === 'verified' ? 'bg-blue-100 text-blue-800' :
-                                    level === 'flagged' ? 'bg-red-100 text-red-800' :
-                                      'bg-gray-100 text-gray-800'}`}>
+                              <Badge
+                                key={level}
+                                variant="secondary"
+                                className="flex items-center gap-1 capitalize"
+                              >
                                 {level}
-                              </span>
+                              </Badge>
                             ))}
                           </div>
                         ) : (
