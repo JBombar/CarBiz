@@ -9,6 +9,8 @@ import {
     DialogHeader,
     DialogTitle,
     DialogTrigger,
+    DialogPortal,
+    DialogOverlay,
 } from "@/components/ui/dialog";
 import {
     Form,
@@ -134,7 +136,7 @@ export function TestDriveModal({ carId, carName, userId }: TestDriveModalProps) 
                     Schedule Test Drive
                 </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[500px]">
+            <DialogContent className="sm:max-w-[500px] overflow-visible">
                 <DialogHeader>
                     <DialogTitle>Schedule a Test Drive</DialogTitle>
                     <DialogDescription>
@@ -202,7 +204,11 @@ export function TestDriveModal({ carId, carName, userId }: TestDriveModalProps) 
                                                 </Button>
                                             </FormControl>
                                         </PopoverTrigger>
-                                        <PopoverContent className="w-auto p-0" align="start">
+                                        <PopoverContent
+                                            className="w-auto p-0 z-50 bg-white shadow-md border rounded-md pointer-events-auto"
+                                            align="start"
+                                            sideOffset={5}
+                                        >
                                             <Calendar
                                                 mode="single"
                                                 selected={field.value}
@@ -212,6 +218,7 @@ export function TestDriveModal({ carId, carName, userId }: TestDriveModalProps) 
                                                     date.getDay() === 0
                                                 }
                                                 initialFocus
+                                                className="pointer-events-auto"
                                             />
                                         </PopoverContent>
                                     </Popover>
