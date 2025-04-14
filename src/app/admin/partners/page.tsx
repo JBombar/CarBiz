@@ -153,6 +153,9 @@ export default function PartnersPage() {
     const [selectedSharingPartnerIds, setSelectedSharingPartnerIds] = useState<string[]>([]);
     const [loadingSharingPartners, setLoadingSharingPartners] = useState(false);
     const [isPanelExpanded, setIsPanelExpanded] = useState(false);
+    const [sharedPartnersHistory, setSharedPartnersHistory] = useState<any[]>([]);
+    const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+    const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
 
     // Available channels and trust levels
     const availableChannels = [
@@ -669,6 +672,9 @@ export default function PartnersPage() {
                 description: `Shared ${selectedPartnerIds.length} partner(s) with your network.`,
             });
 
+            // Add this line to refresh history after a successful share
+            fetchSharedPartnersHistory();
+
             // Reset selections after successful share
             setSelectedPartnerIds([]);
             setSelectAll(false);
@@ -683,6 +689,41 @@ export default function PartnersPage() {
             setIsSharing(false);
         }
     };
+
+    // Add this function to fetch shared partners history
+    const fetchSharedPartnersHistory = async () => {
+        setIsHistoryLoading(true);
+        try {
+            // Get current user's ID
+            const { data: { user } } = await supabase.auth.getUser();
+            const dealerId = user?.id;
+
+            if (!dealerId) {
+                setIsHistoryLoading(false);
+                return;
+            }
+
+            const { data, error } = await supabase
+                .from('partner_shares')
+                .select('*')
+                .eq('dealer_id', dealerId)
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+            setSharedPartnersHistory(data || []);
+        } catch (err: any) {
+            console.error('Error fetching shared partners history:', err);
+            // Not showing a toast as this is not critical
+        } finally {
+            setIsHistoryLoading(false);
+        }
+    };
+
+    // Add this useEffect with your other useEffect hooks
+    useEffect(() => {
+        // Call this after auth is loaded and component is mounted
+        fetchSharedPartnersHistory();
+    }, []);
 
     return (
         <div className="space-y-6">
@@ -935,6 +976,149 @@ export default function PartnersPage() {
                                     </div>
                                 )}
                             </div>
+                        </div>
+
+                        {/* Add the new Shared Partners History section below */}
+                        <div className="mt-6 pt-4 border-t border-gray-200">
+                            <div
+                                className="flex items-center justify-between cursor-pointer mb-3"
+                                onClick={() => setIsHistoryExpanded(!isHistoryExpanded)}
+                            >
+                                <div className="flex items-center">
+                                    <h3 className="text-md font-semibold text-gray-700">
+                                        📤 Shared Partners History
+                                    </h3>
+                                    {!isHistoryLoading && sharedPartnersHistory.length > 0 && (
+                                        <Badge variant="outline" className="ml-2 bg-blue-50">
+                                            {sharedPartnersHistory.length} {sharedPartnersHistory.length === 1 ? 'record' : 'records'}
+                                        </Badge>
+                                    )}
+                                </div>
+                                <Button variant="ghost" size="sm" className="p-1">
+                                    {isHistoryExpanded ? (
+                                        <ChevronDown className="h-5 w-5" />
+                                    ) : (
+                                        <ChevronRight className="h-5 w-5" />
+                                    )}
+                                </Button>
+                            </div>
+
+                            {isHistoryExpanded && (
+                                <div className="transition-all duration-300 ease-in-out">
+                                    {isHistoryLoading ? (
+                                        <div className="flex justify-center py-4">
+                                            <RefreshCcw className="h-5 w-5 animate-spin text-gray-500" />
+                                        </div>
+                                    ) : sharedPartnersHistory.length === 0 ? (
+                                        <div className="text-center py-6 text-gray-500 bg-gray-50 rounded-md">
+                                            No sharing history found. When you share partners, they will appear here.
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
+                                            {sharedPartnersHistory.map((record) => (
+                                                <div
+                                                    key={record.id}
+                                                    className="bg-gray-50 rounded-md p-3 border border-gray-200 hover:border-gray-300 transition"
+                                                >
+                                                    <div className="flex justify-between items-start">
+                                                        <div className="text-sm font-medium text-gray-700">
+                                                            {format(new Date(record.created_at), 'PPp')}
+                                                        </div>
+                                                        <div className="text-xs text-gray-500">
+                                                            ID: {record.id.substring(record.id.length - 5)}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                                                        <div>
+                                                            <span className="text-gray-500">Partner:</span>{' '}
+                                                            {record.name ? (
+                                                                <span className="text-blue-600 font-medium">
+                                                                    {record.name}
+                                                                    {record.company && ` (${record.company})`}
+                                                                    {record.location && ` - ${record.location}`}
+                                                                </span>
+                                                            ) : record.partner_ids?.length ? (
+                                                                <span>{record.partner_ids.length} partners</span>
+                                                            ) : (
+                                                                <span className="text-gray-400">None</span>
+                                                            )}
+                                                        </div>
+
+                                                        <div>
+                                                            <span className="text-gray-500">Channels:</span>{' '}
+                                                            {record.channels?.length ? (
+                                                                <div className="flex flex-wrap gap-1 mt-1">
+                                                                    {record.channels.map((channel: string) => (
+                                                                        <Badge key={channel} variant="secondary" className="text-xs">
+                                                                            {channel}
+                                                                        </Badge>
+                                                                    ))}
+                                                                </div>
+                                                            ) : (
+                                                                <span className="text-gray-400">None</span>
+                                                            )}
+                                                        </div>
+
+                                                        <div>
+                                                            <span className="text-gray-500">Trust Levels:</span>{' '}
+                                                            {record.shared_with_trust_levels?.length ? (
+                                                                <div className="flex flex-wrap gap-1 mt-1">
+                                                                    {record.shared_with_trust_levels.map((level: string) => (
+                                                                        <Badge key={level} variant="secondary" className="text-xs capitalize">
+                                                                            {level}
+                                                                        </Badge>
+                                                                    ))}
+                                                                </div>
+                                                            ) : (
+                                                                <span className="text-gray-400">None</span>
+                                                            )}
+                                                        </div>
+
+                                                        <div>
+                                                            <span className="text-gray-500">Contacts:</span>{' '}
+                                                            {record.shared_with_contacts?.length ? (
+                                                                <div className="flex flex-wrap gap-1 mt-1 max-w-xs overflow-hidden">
+                                                                    {record.shared_with_contacts.map((contact: string, index: number) => (
+                                                                        <Badge key={index} variant="outline" className="text-xs truncate max-w-full">
+                                                                            {contact}
+                                                                        </Badge>
+                                                                    ))}
+                                                                </div>
+                                                            ) : (
+                                                                <span className="text-gray-400">None</span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    {record.message && (
+                                                        <div className="mt-2 text-sm">
+                                                            <span className="text-gray-500">Message:</span>{' '}
+                                                            <span className="text-gray-700 italic">"{record.message}"</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    <div className="flex justify-end mt-3">
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={fetchSharedPartnersHistory}
+                                            disabled={isHistoryLoading}
+                                        >
+                                            {isHistoryLoading ? (
+                                                <RefreshCcw className="h-4 w-4 mr-2 animate-spin" />
+                                            ) : (
+                                                <RefreshCcw className="h-4 w-4 mr-2" />
+                                            )}
+                                            Refresh
+                                        </Button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}

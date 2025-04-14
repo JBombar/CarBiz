@@ -16,7 +16,7 @@ import { format } from "date-fns";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
-import { Loader2, X, ExternalLink, ChevronLeft, ChevronRight, Maximize2 } from "lucide-react";
+import { Loader2, X, ExternalLink, ChevronLeft, ChevronRight, Maximize2, RotateCw } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -109,6 +109,9 @@ export default function AdminCarsPage() {
   const [selectedPartnerIds, setSelectedPartnerIds] = useState<string[]>([]);
   const [loadingPartners, setLoadingPartners] = useState(false);
   const [isPanelExpanded, setIsPanelExpanded] = useState(false);
+  const [sharedOffersHistory, setSharedOffersHistory] = useState<any[]>([]);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
   const supabase = createClient();
   const { toast } = useToast();
 
@@ -532,6 +535,9 @@ export default function AdminCarsPage() {
         description: `Shared ${selectedOfferIds.length} offer(s) with your network.`,
       });
 
+      // Add this line to refresh history after a successful share
+      fetchSharedOffersHistory();
+
       // Reset selections after successful share
       setSelectedOfferIds([]);
       setSelectAll(false);
@@ -546,6 +552,53 @@ export default function AdminCarsPage() {
       setIsSharing(false);
     }
   };
+
+  // Fetch shared offers history
+  const fetchSharedOffersHistory = async () => {
+    setIsHistoryLoading(true);
+    try {
+      // Get current user's ID
+      const { data: { user } } = await supabase.auth.getUser();
+      const dealerId = user?.id;
+
+      if (!dealerId) {
+        setIsHistoryLoading(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('car_offer_shares')
+        .select('*')
+        .eq('dealer_id', dealerId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setSharedOffersHistory(data || []);
+    } catch (err: any) {
+      console.error('Error fetching shared offers history:', err);
+      // Not showing a toast as this is not critical
+    } finally {
+      setIsHistoryLoading(false);
+    }
+  };
+
+  // Add this useEffect with your other useEffect hooks - after the fetchPartners useEffect
+  useEffect(() => {
+    // Call this after auth is loaded and component is mounted
+    fetchSharedOffersHistory();
+
+    // Add event handler to refresh history after a successful share
+    const refreshHistoryAfterShare = () => {
+      fetchSharedOffersHistory();
+    };
+
+    // Subscribe to a successful share event (you can call this after handleShareOffers completes)
+    document.addEventListener('offersShared', refreshHistoryAfterShare);
+
+    return () => {
+      document.removeEventListener('offersShared', refreshHistoryAfterShare);
+    };
+  }, []);
 
   return (
     <div className="container mx-auto p-6">
@@ -792,6 +845,147 @@ export default function AdminCarsPage() {
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* Add this new section */}
+            <div className="mt-6 pt-4 border-t border-gray-200">
+              <div
+                className="flex items-center justify-between cursor-pointer mb-3"
+                onClick={() => setIsHistoryExpanded(!isHistoryExpanded)}
+              >
+                <div className="flex items-center">
+                  <h3 className="text-md font-semibold text-gray-700">
+                    📤 Shared Offers History
+                  </h3>
+                  {!isHistoryLoading && sharedOffersHistory.length > 0 && (
+                    <Badge variant="outline" className="ml-2 bg-blue-50">
+                      {sharedOffersHistory.length} {sharedOffersHistory.length === 1 ? 'record' : 'records'}
+                    </Badge>
+                  )}
+                </div>
+                <Button variant="ghost" size="sm" className="p-1">
+                  {isHistoryExpanded ? (
+                    <ChevronDownIcon className="h-5 w-5" />
+                  ) : (
+                    <ChevronRightIcon className="h-5 w-5" />
+                  )}
+                </Button>
+              </div>
+
+              {isHistoryExpanded && (
+                <div className="transition-all duration-300 ease-in-out">
+                  {isHistoryLoading ? (
+                    <div className="flex justify-center py-4">
+                      <Loader2 className="h-5 w-5 animate-spin text-gray-500" />
+                    </div>
+                  ) : sharedOffersHistory.length === 0 ? (
+                    <div className="text-center py-6 text-gray-500 bg-gray-50 rounded-md">
+                      No sharing history found. When you share offers, they will appear here.
+                    </div>
+                  ) : (
+                    <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
+                      {sharedOffersHistory.map((record) => (
+                        <div
+                          key={record.id}
+                          className="bg-gray-50 rounded-md p-3 border border-gray-200 hover:border-gray-300 transition"
+                        >
+                          <div className="flex justify-between items-start">
+                            <div className="text-sm font-medium text-gray-700">
+                              {format(new Date(record.created_at), 'PPp')}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              ID: {record.id.substring(record.id.length - 5)}
+                            </div>
+                          </div>
+
+                          <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                            <div>
+                              <span className="text-gray-500">Offer:</span>{' '}
+                              {record.make && record.model && record.year ? (
+                                <span className="text-blue-600 font-medium">
+                                  {record.make} {record.model} ({record.year})
+                                </span>
+                              ) : record.offer_ids?.length ? (
+                                <span>{record.offer_ids.length} offers</span>
+                              ) : (
+                                <span className="text-gray-400">None</span>
+                              )}
+                            </div>
+
+                            <div>
+                              <span className="text-gray-500">Channels:</span>{' '}
+                              {record.channels?.length ? (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {record.channels.map((channel: string) => (
+                                    <Badge key={channel} variant="secondary" className="text-xs">
+                                      {channel}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-gray-400">None</span>
+                              )}
+                            </div>
+
+                            <div>
+                              <span className="text-gray-500">Trust Levels:</span>{' '}
+                              {record.shared_with_trust_levels?.length ? (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {record.shared_with_trust_levels.map((level: string) => (
+                                    <Badge key={level} variant="secondary" className="text-xs capitalize">
+                                      {level}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-gray-400">None</span>
+                              )}
+                            </div>
+
+                            <div>
+                              <span className="text-gray-500">Contacts:</span>{' '}
+                              {record.shared_with_contacts?.length ? (
+                                <div className="flex flex-wrap gap-1 mt-1 max-w-xs overflow-hidden">
+                                  {record.shared_with_contacts.map((contact: string, index: number) => (
+                                    <Badge key={index} variant="outline" className="text-xs truncate max-w-full">
+                                      {contact}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-gray-400">None</span>
+                              )}
+                            </div>
+                          </div>
+
+                          {record.message && (
+                            <div className="mt-2 text-sm">
+                              <span className="text-gray-500">Message:</span>{' '}
+                              <span className="text-gray-700 italic">"{record.message}"</span>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex justify-end mt-3">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={fetchSharedOffersHistory}
+                      disabled={isHistoryLoading}
+                    >
+                      {isHistoryLoading ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <RotateCw className="h-4 w-4 mr-2" />
+                      )}
+                      Refresh
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

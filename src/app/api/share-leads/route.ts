@@ -69,16 +69,55 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
         }
 
-        const inserts = lead_ids.map((lead_id: string) => ({
-            lead_id,
-            dealer_id,
-            channels,
-            shared_with_trust_levels,
-            shared_with_contacts,
-            shared_with_partner_ids,
-            message,
-            status: 'pending'
-        }));
+        const inserts = [];
+
+        for (const lead_id of lead_ids) {
+            const { data: lead, error: leadError } = await supabase
+                .from('leads')
+                .select('make, model, fuel_type, transmission, condition, year_from, year_to, location')
+                .eq('id', lead_id)
+                .single();
+
+            if (leadError || !lead) {
+                console.warn(`Lead not found or error fetching: ${lead_id}`, leadError);
+                continue;
+            }
+
+            // Construct a readable year range string
+            let yearString = null;
+            if (lead.year_from && lead.year_to) {
+                yearString = lead.year_from === lead.year_to
+                    ? lead.year_from
+                    : `${lead.year_from}–${lead.year_to}`;
+            } else if (lead.year_from) {
+                yearString = lead.year_from;
+            } else if (lead.year_to) {
+                yearString = lead.year_to;
+            }
+
+            inserts.push({
+                lead_id,
+                dealer_id,
+                channels,
+                shared_with_trust_levels,
+                shared_with_contacts,
+                shared_with_partner_ids,
+                message,
+                make: lead.make,
+                model: lead.model,
+                fuel_type: lead.fuel_type,
+                transmission: lead.transmission,
+                condition: lead.condition,
+                location: lead.location,
+                year_from: lead.year_from,
+                year_to: lead.year_to,
+                status: 'pending'
+            });
+        }
+
+        if (inserts.length === 0) {
+            return NextResponse.json({ error: 'No valid leads to share' }, { status: 400 });
+        }
 
         const { data, error } = await supabase
             .from('lead_shares')

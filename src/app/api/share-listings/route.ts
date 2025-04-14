@@ -68,15 +68,38 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
         }
 
-        const inserts = listing_ids.map((listing_id: string) => ({
-            listing_id,
-            dealer_id,
-            channels,
-            shared_with_trust_levels,
-            shared_with_contacts,
-            message,
-            status: 'pending'
-        }));
+        const inserts = [];
+
+        for (const listing_id of listing_ids) {
+            const { data: listing, error: listingError } = await supabase
+                .from('car_listings')
+                .select('make, model, year')
+                .eq('id', listing_id)
+                .single();
+
+            if (listingError || !listing) {
+                console.warn(`Listing not found or error fetching: ${listing_id}`, listingError);
+                continue;
+            }
+
+            inserts.push({
+                listing_id,
+                dealer_id,
+                channels,
+                shared_with_trust_levels,
+                shared_with_contacts,
+                message,
+                make: listing.make,
+                model: listing.model,
+                year: listing.year,
+                listing_url: `${process.env.NEXT_PUBLIC_BASE_URL || 'https://yourdomain.com'}/inventory/${listing_id}`,
+                status: 'pending'
+            });
+        }
+
+        if (inserts.length === 0) {
+            return NextResponse.json({ error: 'No valid listings to share' }, { status: 400 });
+        }
 
         const { data, error } = await supabase
             .from('listing_shares')

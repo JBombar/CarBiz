@@ -68,15 +68,37 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
         }
 
-        const inserts = partner_ids.map((partner_id: string) => ({
-            partner_id,
-            dealer_id,
-            channels,
-            shared_with_trust_levels,
-            shared_with_contacts,
-            message,
-            status: 'pending'
-        }));
+        const inserts = [];
+
+        for (const partner_id of partner_ids) {
+            const { data: partner, error: partnerError } = await supabase
+                .from('partners')
+                .select('name, company, location')
+                .eq('id', partner_id)
+                .single();
+
+            if (partnerError || !partner) {
+                console.warn(`Partner not found or error fetching: ${partner_id}`, partnerError);
+                continue;
+            }
+
+            inserts.push({
+                partner_id,
+                dealer_id,
+                channels,
+                shared_with_trust_levels,
+                shared_with_contacts,
+                message,
+                name: partner.name,
+                company: partner.company,
+                location: partner.location,
+                status: 'pending'
+            });
+        }
+
+        if (inserts.length === 0) {
+            return NextResponse.json({ error: 'No valid partners to share' }, { status: 400 });
+        }
 
         const { data, error } = await supabase
             .from('partner_shares')

@@ -68,15 +68,37 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
         }
 
-        const inserts = offer_ids.map((offer_id: string) => ({
-            offer_id,
-            dealer_id,
-            channels,
-            shared_with_trust_levels,
-            shared_with_contacts,
-            message,
-            status: 'pending'
-        }));
+        const inserts = [];
+
+        for (const offer_id of offer_ids) {
+            const { data: offer, error: offerError } = await supabase
+                .from('car_offers')
+                .select('make, model, year')
+                .eq('id', offer_id)
+                .single();
+
+            if (offerError || !offer) {
+                console.warn(`Offer not found or error fetching: ${offer_id}`, offerError);
+                continue;
+            }
+
+            inserts.push({
+                offer_id,
+                dealer_id,
+                channels,
+                shared_with_trust_levels,
+                shared_with_contacts,
+                message,
+                make: offer.make,
+                model: offer.model,
+                year: offer.year,
+                status: 'pending'
+            });
+        }
+
+        if (inserts.length === 0) {
+            return NextResponse.json({ error: 'No valid offers to share' }, { status: 400 });
+        }
 
         const { data, error } = await supabase
             .from('car_offer_shares')

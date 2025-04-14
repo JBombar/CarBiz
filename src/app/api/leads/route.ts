@@ -13,8 +13,8 @@ function createSupabaseClient() {
     {
       cookies: {
         get(name: string) { return cookieStore.get(name)?.value; },
-        set(name: string, value: string, options: CookieOptions) { try { cookieStore.set({ name, value, ...options }); } catch {} },
-        remove(name: string, options: CookieOptions) { try { cookieStore.set({ name, value: '', ...options }); } catch {} },
+        set(name: string, value: string, options: CookieOptions) { try { cookieStore.set({ name, value, ...options }); } catch { } },
+        remove(name: string, options: CookieOptions) { try { cookieStore.set({ name, value: '', ...options }); } catch { } },
       },
     }
   );
@@ -44,7 +44,7 @@ const leadCreateSchema = z.object({
 // ============================================================================
 export async function GET(req: NextRequest) {
   const supabase = createSupabaseClient();
-  
+
   // Attempt to auth
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) {

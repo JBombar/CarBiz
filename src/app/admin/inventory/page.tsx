@@ -89,6 +89,7 @@ type CarListing = {
   special_offer_label?: string;
   time_in_stock_days?: number | null;
   listing_views?: { count: number }[]; // Add this to fix the TypeScript error
+  listing_url?: string; // Add this new field
 };
 
 // Define the initial state for the form data
@@ -908,6 +909,44 @@ export default function InventoryPage() {
   // Add this new state variable with the other state variables
   const [isPanelExpanded, setIsPanelExpanded] = useState(false);
 
+  // Add these state variables with your other state declarations
+  const [sharedListingsHistory, setSharedListingsHistory] = useState<any[]>([]);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
+
+  // Add this function with your other functions
+  const fetchSharedListingsHistory = async () => {
+    setIsHistoryLoading(true);
+    try {
+      const currentDealerId = dealerId || await fetchDealerId();
+      if (!currentDealerId) {
+        setIsHistoryLoading(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('listing_shares')
+        .select('*')
+        .eq('dealer_id', currentDealerId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setSharedListingsHistory(data || []);
+    } catch (err: any) {
+      console.error('Error fetching shared listings history:', err);
+      // Not showing a toast as this is not critical
+    } finally {
+      setIsHistoryLoading(false);
+    }
+  };
+
+  // Add this useEffect with your other useEffect hooks
+  useEffect(() => {
+    if (dealerId) {
+      fetchSharedListingsHistory();
+    }
+  }, [dealerId]);
+
   // --- Render ---
 
   return (
@@ -1183,6 +1222,152 @@ export default function InventoryPage() {
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* Add the new Shared Listings History section below */}
+            <div className="mt-6 pt-4 border-t border-gray-200">
+              <div
+                className="flex items-center justify-between cursor-pointer mb-3"
+                onClick={() => setIsHistoryExpanded(!isHistoryExpanded)}
+              >
+                <div className="flex items-center">
+                  <h3 className="text-md font-semibold text-gray-700">
+                    📤 Shared Listings History
+                  </h3>
+                  {!isHistoryLoading && sharedListingsHistory.length > 0 && (
+                    <Badge variant="outline" className="ml-2 bg-blue-50">
+                      {sharedListingsHistory.length} {sharedListingsHistory.length === 1 ? 'record' : 'records'}
+                    </Badge>
+                  )}
+                </div>
+                <Button variant="ghost" size="sm" className="p-1">
+                  {isHistoryExpanded ? (
+                    <ChevronDownIcon className="h-5 w-5" />
+                  ) : (
+                    <ChevronRightIcon className="h-5 w-5" />
+                  )}
+                </Button>
+              </div>
+
+              {isHistoryExpanded && (
+                <div className="transition-all duration-300 ease-in-out">
+                  {isHistoryLoading ? (
+                    <div className="flex justify-center py-4">
+                      <ArrowPathIcon className="animate-spin h-5 w-5 text-gray-500" />
+                    </div>
+                  ) : sharedListingsHistory.length === 0 ? (
+                    <div className="text-center py-6 text-gray-500 bg-gray-50 rounded-md">
+                      No sharing history found. When you share listings, they will appear here.
+                    </div>
+                  ) : (
+                    <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
+                      {sharedListingsHistory.map((record) => (
+                        <div
+                          key={record.id}
+                          className="bg-gray-50 rounded-md p-3 border border-gray-200 hover:border-gray-300 transition"
+                        >
+                          <div className="flex justify-between items-start">
+                            <div className="text-sm font-medium text-gray-700">
+                              {format(new Date(record.created_at), 'PPp')}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              ID: {record.id.substring(record.id.length - 5)}
+                            </div>
+                          </div>
+
+                          <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                            <div>
+                              <span className="text-gray-500">Listings:</span>{' '}
+                              {record.make && record.model && record.year && record.listing_url ? (
+                                <a
+                                  href={record.listing_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-600 hover:underline"
+                                >
+                                  {record.make} {record.model} ({record.year})
+                                </a>
+                              ) : record.listing_ids?.length ? (
+                                <span>{record.listing_ids.length} listings</span>
+                              ) : (
+                                <span className="text-gray-400">None</span>
+                              )}
+                            </div>
+
+                            <div>
+                              <span className="text-gray-500">Channels:</span>{' '}
+                              {record.channels?.length ? (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {record.channels.map((channel: string) => (
+                                    <Badge key={channel} variant="secondary" className="text-xs">
+                                      {channel}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-gray-400">None</span>
+                              )}
+                            </div>
+
+                            <div>
+                              <span className="text-gray-500">Trust Levels:</span>{' '}
+                              {record.shared_with_trust_levels?.length ? (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {record.shared_with_trust_levels.map((level: string) => (
+                                    <Badge key={level} variant="secondary" className="text-xs capitalize">
+                                      {level}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-gray-400">None</span>
+                              )}
+                            </div>
+
+                            <div>
+                              <span className="text-gray-500">Contacts:</span>{' '}
+                              {record.shared_with_contacts?.length ? (
+                                <div className="flex flex-wrap gap-1 mt-1 max-w-xs overflow-hidden">
+                                  {record.shared_with_contacts.map((contact: string, index: number) => (
+                                    <Badge key={index} variant="outline" className="text-xs truncate max-w-full">
+                                      {contact}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-gray-400">None</span>
+                              )}
+                            </div>
+                          </div>
+
+                          {record.message && (
+                            <div className="mt-2 text-sm">
+                              <span className="text-gray-500">Message:</span>{' '}
+                              <span className="text-gray-700 italic">"{record.message}"</span>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex justify-end mt-3">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={fetchSharedListingsHistory}
+                      disabled={isHistoryLoading}
+                    >
+                      {isHistoryLoading ? (
+                        <ArrowPathIcon className="animate-spin h-4 w-4 mr-2" />
+                      ) : (
+                        <ArrowPathIcon className="h-4 w-4 mr-2" />
+                      )}
+                      Refresh
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
